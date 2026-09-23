@@ -93,18 +93,6 @@ export const ItineraryRequestSchema = TripSchema.extend({
   picks: z.array(PickSchema).min(1).max(PIECES.length),
 });
 
-export const SavePlanSchema = z.object({
-  trip: TripSchema,
-  itinerary: ItinerarySchema,
-});
-
-export type SavedPlan = {
-  id: string;
-  createdAt: string;
-  trip: Trip;
-  itinerary: Itinerary;
-};
-
 // JSON schemas handed to Claude as strict tool inputs. Kept in sync with the
 // zod schemas above, which re-validate whatever comes back.
 const str = { type: "string" } as const;

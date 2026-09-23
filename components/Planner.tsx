@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { NEIGHBORHOODS } from "@/lib/neighborhoods";
 import { ACTIVITY_TYPES, BAR_TYPES, CUISINES } from "@/lib/cuisines";
 import {
@@ -72,9 +71,6 @@ export function Planner() {
   const [itinerary, setItinerary] = useState<Itinerary | null>(null);
   const [itinLoading, setItinLoading] = useState(false);
   const [itinError, setItinError] = useState<string | null>(null);
-  const [savedId, setSavedId] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [copied, setCopied] = useState(false);
   // Running API cost for this night, shown so searches never surprise you.
   const [spent, setSpent] = useState(0);
 
@@ -123,7 +119,6 @@ export function Planner() {
     setResults(Object.fromEntries(orderedPieces.map((p) => [p.id, { status: "loading", options: [], seen: [] }])));
     setPicks({});
     setItinerary(null);
-    setSavedId(null);
     setSpent(0);
     setStep(3);
     try {
@@ -153,7 +148,6 @@ export function Planner() {
     setItinLoading(true);
     setItinError(null);
     setItinerary(null);
-    setSavedId(null);
     try {
       const data = await postJSON<{ itinerary: Itinerary; costUsd: number }>("/api/itinerary", {
         ...trip,
@@ -165,30 +159,6 @@ export function Planner() {
       setItinError((err as Error).message);
     } finally {
       setItinLoading(false);
-    }
-  }
-
-  async function save() {
-    if (!itinerary) return;
-    setSaving(true);
-    try {
-      const plan = await postJSON<{ id: string }>("/api/plans", { trip, itinerary });
-      setSavedId(plan.id);
-    } catch (err) {
-      setItinError((err as Error).message);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function copyLink() {
-    if (!savedId) return;
-    try {
-      await navigator.clipboard.writeText(`${window.location.origin}/plan/${savedId}`);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Clipboard can be blocked; the link is still visible to copy by hand.
     }
   }
 
@@ -439,23 +409,11 @@ export function Planner() {
               <OptionSkeleton />
             </div>
           )}
-          {itinError && <ErrorBox message={itinError} onRetry={itinerary ? save : buildItinerary} />}
+          {itinError && <ErrorBox message={itinError} onRetry={buildItinerary} />}
           {itinerary && (
             <>
               <Timeline itinerary={itinerary} />
               <div className="flex flex-wrap items-center gap-3">
-                {savedId ? (
-                  <>
-                    <PrimaryButton onClick={copyLink}>{copied ? "Link copied ✓" : "Copy share link"}</PrimaryButton>
-                    <Link href={`/plan/${savedId}`} className="text-sm text-muted underline underline-offset-4">
-                      Open saved plan
-                    </Link>
-                  </>
-                ) : (
-                  <PrimaryButton onClick={save} disabled={saving}>
-                    {saving ? "Saving…" : "Save this plan"}
-                  </PrimaryButton>
-                )}
                 <GhostButton onClick={() => setStep(3)}>← Change picks</GhostButton>
               </div>
               {spent > 0 && <p className="text-xs text-muted">This plan cost about ${spent.toFixed(2)} in API usage.</p>}

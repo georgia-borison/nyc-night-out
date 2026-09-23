@@ -27,11 +27,6 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           <Link href="/" className="font-display text-xl italic tracking-tight">
             Night Out <span className="text-accent">NYC</span>
           </Link>
-          <nav className="text-sm text-muted">
-            <Link href="/plans" className="hover:text-fg">
-              My plans
-            </Link>
-          </nav>
         </header>
         <main className="mx-auto w-full max-w-4xl flex-1 px-4 pb-24 sm:px-6">{children}</main>
       </body>
