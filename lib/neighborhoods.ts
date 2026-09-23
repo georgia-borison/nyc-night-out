@@ -1,0 +1,46 @@
+export const NEIGHBORHOODS: { borough: string; areas: string[] }[] = [
+  {
+    borough: "Manhattan",
+    areas: [
+      "West Village",
+      "Greenwich Village",
+      "East Village",
+      "Lower East Side",
+      "SoHo / Nolita",
+      "Chinatown / Two Bridges",
+      "Tribeca",
+      "FiDi / Seaport",
+      "Chelsea",
+      "Meatpacking",
+      "Flatiron / NoMad",
+      "Gramercy / Union Square",
+      "Midtown / Hell's Kitchen",
+      "Upper West Side",
+      "Upper East Side",
+      "Harlem",
+    ],
+  },
+  {
+    borough: "Brooklyn",
+    areas: [
+      "Williamsburg",
+      "Greenpoint",
+      "Bushwick",
+      "Fort Greene / Clinton Hill",
+      "Park Slope",
+      "Prospect Heights",
+      "Carroll Gardens / Cobble Hill",
+      "DUMBO / Brooklyn Heights",
+      "Bed-Stuy",
+      "Crown Heights",
+    ],
+  },
+  {
+    borough: "Queens",
+    areas: ["Astoria", "Long Island City", "Jackson Heights", "Flushing", "Ridgewood"],
+  },
+  {
+    borough: "Bronx",
+    areas: ["Arthur Avenue / Belmont", "Mott Haven"],
+  },
+];

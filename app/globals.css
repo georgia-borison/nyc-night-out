@@ -1,0 +1,60 @@
+@import "tailwindcss";
+
+/* A late-night palette: ink background, warm neon accent. */
+:root {
+  --bg: #0e0d12;
+  --surface: #17151e;
+  --surface-2: #211e2a;
+  --line: #2e2a3a;
+  --fg: #f3efe8;
+  --muted: #a59fb3;
+  --accent: #ff8a5b;
+  --accent-ink: #1a0f0a;
+  --accent-soft: rgba(255, 138, 91, 0.14);
+  --danger: #ff6b7a;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-danger: var(--danger);
+  --font-sans: var(--font-geist-sans);
+  --font-display: var(--font-fraunces);
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background:
+    radial-gradient(1200px 500px at 80% -10%, rgba(255, 138, 91, 0.08), transparent 60%),
+    radial-gradient(900px 400px at -10% 10%, rgba(140, 110, 255, 0.07), transparent 60%),
+    var(--bg);
+  background-attachment: fixed;
+  color: var(--fg);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.8);
+}
+
+@keyframes shimmer {
+  0% { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+
+.skeleton {
+  background: linear-gradient(90deg, var(--surface) 0%, var(--surface-2) 50%, var(--surface) 100%);
+  background-size: 800px 100%;
+  animation: shimmer 1.6s linear infinite;
+}
