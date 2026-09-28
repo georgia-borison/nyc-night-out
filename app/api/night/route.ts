@@ -9,6 +9,8 @@ import {
   type NightEvent,
   type PieceId,
 } from "@/lib/schema";
+import { locateAll } from "@/lib/geocode";
+import { checkLinks } from "@/lib/verifyUrl";
 
 export const maxDuration = 300;
 
@@ -25,15 +27,37 @@ export async function POST(request: Request) {
   const encoder = new TextEncoder();
   const body = new ReadableStream<Uint8Array>({
     async start(controller) {
-      const send = (event: NightEvent) => controller.enqueue(encoder.encode(JSON.stringify(event) + "\n"));
+      const send = (event: NightEvent) => {
+        try {
+          controller.enqueue(encoder.encode(JSON.stringify(event) + "\n"));
+        } catch {
+          // Stream already closed (e.g. after an error); a late link check is harmless to drop.
+        }
+      };
       const sent = new Set<PieceId>();
       const searched = new Set<string>();
+      const linkChecks: Promise<void>[] = [];
+      const started = Date.now();
+      const secs = () => ((Date.now() - started) / 1000).toFixed(1);
 
       const sendSection = (section: unknown) => {
         const s = SectionSchema.safeParse(section);
         if (!s.success || sent.has(s.data.piece) || !pieces.includes(s.data.piece)) return;
-        sent.add(s.data.piece);
-        send({ type: "section", piece: s.data.piece, options: cleanOptions(s.data.options) });
+        const { piece } = s.data;
+        const options = cleanOptions(s.data.options);
+        sent.add(piece);
+        send({ type: "section", piece, options });
+        console.log(`[night] ${piece} sent at ${secs()}s`);
+        // Check websites in the background; the cards are already on screen.
+        linkChecks.push(
+          checkLinks(options, trip.area).then(({ bad, closed }) => {
+            if (bad.length || closed.length) send({ type: "links", piece, bad, closed });
+          }),
+          // Also place each option on the map, for walking-distance notes.
+          locateAll(options, trip.area).then((coords) => {
+            if (coords.length) send({ type: "coords", piece, coords });
+          }),
+        );
       };
 
       try {
@@ -61,6 +85,8 @@ export async function POST(request: Request) {
         for (const section of data.sections) sendSection(section);
         // Parts Claude skipped still resolve, so the page doesn't spin forever.
         for (const piece of pieces) if (!sent.has(piece)) send({ type: "section", piece, options: [] });
+        await Promise.all(linkChecks);
+        console.log(`[night] links and locations checked by ${secs()}s`);
         send({ type: "done", costUsd });
       } catch (err) {
         send({ type: "error", error: describeError(err).message });

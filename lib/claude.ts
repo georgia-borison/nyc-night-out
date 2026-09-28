@@ -81,6 +81,8 @@ export async function askClaude<T>(opts: {
   maxSearches?: number;
   onSearch?: (query: string) => void;
   onPartial?: (input: unknown) => void;
+  /** Content check beyond the schema; return a problem to send back to Claude, or null if it's fine. */
+  check?: (data: T) => string | null;
 }): Promise<{ data: T; costUsd: number }> {
   const anthropic = getClient();
 
@@ -174,6 +176,19 @@ export async function askClaude<T>(opts: {
         throw new PlannerError("The response was cut off. Please try again.", 502);
       }
       const parsed = opts.schema.safeParse(submit.input);
+      const problem = parsed.success ? (opts.check?.(parsed.data) ?? null) : null;
+      if (parsed.success && problem) {
+        // Tell Claude what's wrong in the same conversation and let it resubmit.
+        console.warn(`[claude] submit rejected: ${problem}`);
+        messages.push(
+          { role: "assistant", content: message.content as BetaContentBlockParam[] },
+          {
+            role: "user",
+            content: [{ type: "tool_result", tool_use_id: submit.id, is_error: true, content: problem }],
+          },
+        );
+        continue;
+      }
       if (parsed.success) {
         console.log(`[claude] ${searches} searches, ~${costUsd.toFixed(3)}`);
         return { data: parsed.data, costUsd };

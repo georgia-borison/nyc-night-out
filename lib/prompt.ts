@@ -1,4 +1,6 @@
+import { areaInfo } from "./neighborhoods";
 import { type PieceId, type SuggestRequest, type Trip, type Pick, PIECES, pieceLabel } from "./schema";
+import { milesBetween } from "./walk";
 
 export const SYSTEM_PROMPT = `You are a well-connected New York friend in your early 30s who plans great nights out. You know the city's restaurants, bars, venues and what's on this week.
 
@@ -10,11 +12,11 @@ Accuracy:
 - Only suggest places that are open and operating now.
 - You get only a few web searches, so make each one count. For well-established places, rely on what you already know. Save searches for things you can't know on your own: what's happening on this date, recent openings, and whether a place you're unsure about has closed. Use broad searches that cover several needs at once, such as "West Village new restaurants and bars 2026" or "NYC events September 23 2026". Never search once per venue. Always run at least one search before answering, to catch recent closures and openings in the area, or what's on this date.
 - Events and shows must happen on the requested date, within a reasonable window around the requested time. If you can't confirm one, don't include it.
-- Give a real URL for every option: the official site, a ticket page, or a reputable listing. Use the official site if you know it; don't search just to find a URL.
+- For each option's URL, give the official website (or a ticket page or reputable listing like Resy) as best you know it. The app checks every link and swaps any that don't work for a search, so a best guess is better than leaving it empty. Don't search just to find a URL.
 - Don't make up addresses. An address is always a full street address with house number, street, borough and ZIP (e.g. "2020 Broadway, New York, NY 10023"), never a neighborhood name. If you aren't sure of one, use an empty string.
 
 Taste:
-- Keep options close to the requested area. Walkable is best; a short subway or cab ride is fine when the pick is clearly worth it.
+- Stay inside the requested area and follow the getting-around rule given with each request (a walking night or short rides OK).
 - Respect the budget. $ means cheap, $$ moderate, $$$ pricey, $$$$ splurge.
 - Vary the options. For dinner, each option should be a different specific cuisine (not three Italian places) unless the person asked for one cuisine. For bars, mix styles such as cocktail, wine, dive with character, speakeasy, and listening bar. Mix well-known favorites with lesser-known spots.
 - Label each option's category with the specific cuisine or style, like "Sichuan", "Neapolitan pizza", "Oaxacan", "Natural wine bar" or "Jazz club", never a broad bucket like "Asian" or "Latin".
@@ -60,6 +62,13 @@ function tripLines(trip: Trip) {
   if (trip.cuisines.length) lines.push(`Cuisines they're interested in: ${trip.cuisines.join(", ")}`);
   if (trip.barTypes.length) lines.push(`Bar styles they like: ${trip.barTypes.join(", ")}`);
   if (trip.activityTypes.length) lines.push(`Activities they like: ${trip.activityTypes.join(", ")}`);
+  const info = areaInfo(trip.area);
+  if (info) lines.push(`Area boundaries: ${info.bounds}`);
+  lines.push(
+    trip.rides
+      ? "Getting around: short rides are OK. Options can be anywhere in the area, and cab or subway hops of up to about 15 minutes between stops are fine. When a hop is needed, say which train or suggest a cab in the tip."
+      : "Getting around: a walking night. Every option's address must be inside the area boundaries above, or at most a few blocks past them. Favor places within 10-15 minutes' walk of each other so the whole night works on foot. Before submitting, check each address against the boundaries and swap out anything that's outside.",
+  );
   return lines.join("\n");
 }
 
@@ -109,7 +118,23 @@ Return 3 options.`;
   return prompt;
 }
 
+// Straight-line distances between picks, so the schedule allows for real travel.
+function distanceLines(picks: Pick[]) {
+  const lines: string[] = [];
+  for (let i = 0; i < picks.length; i++) {
+    for (let j = i + 1; j < picks.length; j++) {
+      const a = picks[i];
+      const b = picks[j];
+      if (a.lat === undefined || a.lng === undefined || b.lat === undefined || b.lng === undefined) continue;
+      const miles = milesBetween({ lat: a.lat, lng: a.lng }, { lat: b.lat, lng: b.lng });
+      lines.push(`- ${a.name} to ${b.name}: about ${miles.toFixed(1)} mi as the crow flies`);
+    }
+  }
+  return lines;
+}
+
 export function itineraryPrompt(trip: Trip, picks: Pick[]) {
+  const distances = distanceLines(picks);
   const stops = picks
     .map(
       (p, i) =>
@@ -122,8 +147,8 @@ ${tripLines(trip)}
 
 Picks:
 ${stops}
-
-Order the stops in a sensible sequence. Normally that's pre-drinks, dinner, then the activity or event (or the activity before dinner if its fixed showtime demands it), then post-dinner drinks, then dancing. Respect any fixed showtimes. Give realistic arrival times starting around ${formatTime(trip.time)}, how long to spend at each place, and how to get from each stop to the next (walking minutes, subway line, or cab). Keep each stop's name, category, address and URL exactly as given.
+${distances.length ? `\nDistances between them (walking is roughly 20 minutes per mile):\n${distances.join("\n")}\n` : ""}
+Order the stops in a sensible sequence. Normally that's pre-drinks, dinner, then the activity or event (or the activity before dinner if its fixed showtime demands it), then post-dinner drinks, then dancing. Respect any fixed showtimes. Give realistic arrival times starting around ${formatTime(trip.time)} and how long to spend at each place, leaving enough time to get between stops given the distances. For getting_there, give practical advice on getting there from the previous stop (which way to walk, which subway line, or to grab a cab). Don't state walking minutes or distances; the app adds real walking times. Keep each stop's name, category, address and URL exactly as given.
 
 Give the night a playful 2-6 word title that riffs on the vibe, the weather or the neighborhood (like "Rain Check? Never." or "Uptown Low & Slow"), plus a one-line tagline. The title must never be empty.
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { searchUrl } from "@/lib/planStyle";
 import type { Option } from "@/lib/schema";
 
 export function OptionCard({
@@ -7,11 +8,14 @@ export function OptionCard({
   selected,
   onSelect,
   onMoreLikeThis,
+  note,
 }: {
   option: Option;
   selected: boolean;
   onSelect: () => void;
   onMoreLikeThis: () => void;
+  /** e.g. "~25 min walk from UWS · 60s–70s" when it's outside a walking night's area. */
+  note?: string;
 }) {
   return (
     <div
@@ -48,22 +52,23 @@ export function OptionCard({
         </span>
       </div>
 
+      {note && (
+        <p className="w-fit rounded-full bg-accent-soft px-2.5 py-0.5 text-[11px] font-medium text-accent">🚶 {note}</p>
+      )}
       <p className="text-sm leading-relaxed">{option.why}</p>
       {option.when && <p className="text-xs text-muted">🕘 {option.when}</p>}
       {option.tip && <p className="text-xs text-muted">💡 {option.tip}</p>}
 
       <div className="mt-auto flex flex-wrap items-center gap-x-4 gap-y-1 pt-1 text-xs">
-        {option.url && (
-          <a
-            href={option.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            className="text-muted underline underline-offset-4 hover:text-fg"
-          >
-            Website ↗
-          </a>
-        )}
+        <a
+          href={option.url || searchUrl(option.name, option.address)}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          className="text-muted underline underline-offset-4 hover:text-fg"
+        >
+          {option.url ? "Website ↗" : "Search ↗"}
+        </a>
         {option.address && (
           <a
             href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${option.name} ${option.address}`)}`}

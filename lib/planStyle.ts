@@ -28,6 +28,11 @@ export function transitIcon(text: string) {
   return "🚶";
 }
 
+/** Shown instead of "Website" when a venue's link didn't check out. */
+export function searchUrl(name: string, address: string) {
+  return `https://www.google.com/search?q=${encodeURIComponent(`${name} ${address || ""} New York`.replace(/\s+/g, " "))}`;
+}
+
 export function mapsSearchUrl(name: string, address: string) {
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${name} ${address}`)}`;
 }

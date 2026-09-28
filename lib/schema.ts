@@ -29,6 +29,8 @@ export const TripSchema = z.object({
   cuisines: z.array(z.string().max(60)).max(20).default([]),
   barTypes: z.array(z.string().max(60)).max(20).default([]),
   activityTypes: z.array(z.string().max(60)).max(20).default([]),
+  // OK with a quick cab or subway ride between stops (otherwise a walking night).
+  rides: z.boolean().default(false),
 });
 export type Trip = z.infer<typeof TripSchema>;
 
@@ -50,6 +52,9 @@ export const OptionSchema = z.object({
   tip: z.string(),
   when: z.string(),
   url: z.string(),
+  // Filled in by the app in the background (not part of Claude's output).
+  lat: z.number().optional(),
+  lng: z.number().optional(),
 });
 export type Option = z.infer<typeof OptionSchema>;
 
@@ -85,10 +90,16 @@ export const NightResultSchema = z.object({
   sections: z.array(SectionSchema),
 });
 
+export type VenueCoords = { name: string; address: string; lat: number; lng: number };
+
 // Lines streamed back by /api/night, one JSON object per line.
 export type NightEvent =
   | { type: "search"; query: string }
   | { type: "section"; piece: PieceId; options: Option[] }
+  // Sent after a section: venues whose website didn't check out, and ones whose own site says they've closed.
+  | { type: "links"; piece: PieceId; bad: string[]; closed: string[] }
+  // Sent after a section: where each option is, for walking-distance notes and faster itineraries.
+  | { type: "coords"; piece: PieceId; coords: VenueCoords[] }
   | { type: "done"; costUsd: number }
   | { type: "error"; error: string };
 
@@ -104,6 +115,8 @@ export const ItineraryStopSchema = z.object({
   // Added by the server after geocoding; not part of Claude's output.
   lat: z.number().optional(),
   lng: z.number().optional(),
+  // Real walk from the previous stop (lib/walk.ts).
+  walk: z.object({ minutes: z.number(), miles: z.number(), estimated: z.boolean().optional() }).optional(),
 });
 export type ItineraryStop = z.infer<typeof ItineraryStopSchema>;
 
@@ -119,11 +132,32 @@ export const ItinerarySchema = z.object({
 });
 export type Itinerary = z.infer<typeof ItinerarySchema>;
 
+// Coordinates are looked up in the background as soon as an option is picked.
 export const PickSchema = OptionSchema.extend({ piece: z.enum(PIECE_IDS) });
 export type Pick = z.infer<typeof PickSchema>;
 
 export const ItineraryRequestSchema = TripSchema.extend({
   picks: z.array(PickSchema).min(1).max(PIECES.length),
+});
+
+export const LocateRequestSchema = z.object({
+  name: z.string().max(120),
+  address: z.string().max(200),
+  area: z.string().max(120),
+});
+
+export const VerifyLinksRequestSchema = z.object({
+  area: z.string().max(120),
+  items: z
+    .array(
+      z.object({
+        name: z.string().max(120),
+        url: z.string().max(500),
+        address: z.string().max(200),
+        neighborhood: z.string().max(120).optional(),
+      }),
+    )
+    .max(12),
 });
 
 export const SavePlanSchema = z.object({

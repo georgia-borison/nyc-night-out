@@ -11,7 +11,8 @@ const NYC_VIEWBOX = "-74.26,40.92,-73.68,40.49";
 // unless the address itself names another borough.
 const MAX_KM_FROM_AREA = 6;
 // Bump when the lookup logic changes, so saved plans get re-geocoded once.
-export const GEO_VERSION = 2;
+// v3 added real walking times between stops.
+export const GEO_VERSION = 3;
 
 type Hit = { lat: number; lng: number; addresstype?: string; type?: string };
 type Where = { borough: Borough | null; explicit: boolean };
@@ -64,11 +65,22 @@ function km(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
   return 12742 * Math.asin(Math.sqrt(h));
 }
 
+// Requests go out one at a time, at most one per second, even when several
+// lookups run at once (e.g. background checks while Claude is still writing).
+let queue: Promise<unknown> = Promise.resolve();
 let lastRequest = 0;
-async function nominatim(params: Record<string, string>): Promise<Hit[]> {
-  const wait = lastRequest + 1100 - Date.now();
-  if (wait > 0) await new Promise((r) => setTimeout(r, wait));
-  lastRequest = Date.now();
+function nominatim(params: Record<string, string>): Promise<Hit[]> {
+  const run = queue.then(async () => {
+    const wait = lastRequest + 1100 - Date.now();
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    lastRequest = Date.now();
+    return request(params);
+  });
+  queue = run.catch(() => {});
+  return run;
+}
+
+async function request(params: Record<string, string>): Promise<Hit[]> {
   const url = new URL(NOMINATIM);
   url.search = new URLSearchParams({
     format: "jsonv2",
@@ -101,15 +113,25 @@ function pick(hits: Hit[], center: Center, where: Where): Hit | null {
   );
 }
 
+type AreaContext = { center: Center; borough: Borough | null };
+const areaCache = new Map<string, Promise<AreaContext>>();
+
 /** Center and borough of the night's area, from the list or looked up once. */
-async function areaContext(area: string): Promise<{ center: Center; borough: Borough | null }> {
+export function areaContext(area: string): Promise<AreaContext> {
   const known = areaInfo(area);
-  if (known) return { center: { lat: known.lat, lng: known.lng }, borough: known.borough };
-  const [hit] = await nominatim({ q: `${area}, New York City` });
-  return { center: hit ? { lat: hit.lat, lng: hit.lng } : null, borough: boroughOf(area, null).borough };
+  if (known) return Promise.resolve({ center: { lat: known.lat, lng: known.lng }, borough: known.borough });
+  let ctx = areaCache.get(area);
+  if (!ctx) {
+    ctx = nominatim({ q: `${area}, New York City` }).then(([hit]) => ({
+      center: hit ? { lat: hit.lat, lng: hit.lng } : null,
+      borough: boroughOf(area, null).borough,
+    }));
+    areaCache.set(area, ctx);
+  }
+  return ctx;
 }
 
-async function locate(stop: ItineraryStop, center: Center, areaBorough: Borough | null): Promise<Hit | null> {
+async function locate(stop: { name: string; address: string }, center: Center, areaBorough: Borough | null): Promise<Hit | null> {
   const where = boroughOf(stop.address, areaBorough);
   const city = where.borough ?? "New York";
   const street = streetPart(stop.address);
@@ -121,6 +143,22 @@ async function locate(stop: ItineraryStop, center: Center, areaBorough: Borough 
     if (hit) return hit;
   }
   return pick(await nominatim({ q: `${stop.name}, ${city}, New York` }), center, where);
+}
+
+/** Coordinates for one venue near the night's area, or null if it can't be placed precisely. */
+export async function locateVenue(name: string, address: string, area: string): Promise<{ lat: number; lng: number } | null> {
+  const { center, borough } = await areaContext(area);
+  const hit = await locate({ name, address }, center, borough);
+  return hit ? { lat: hit.lat, lng: hit.lng } : null;
+}
+
+/** Coordinates for each venue that can be placed (skips the rest). */
+export async function locateAll(
+  venues: { name: string; address: string }[],
+  area: string,
+): Promise<{ name: string; address: string; lat: number; lng: number }[]> {
+  const found = await Promise.all(venues.map(async (v) => ({ ...v, point: await locateVenue(v.name, v.address, area) })));
+  return found.flatMap((f) => (f.point ? [{ name: f.name, address: f.address, ...f.point }] : []));
 }
 
 /**

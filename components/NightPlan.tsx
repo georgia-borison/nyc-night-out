@@ -2,8 +2,8 @@
 
 import { useMemo, useState, type CSSProperties } from "react";
 import dynamic from "next/dynamic";
-import type { Itinerary, Trip } from "@/lib/schema";
-import { KIND_STYLE, mapsRouteUrl, mapsSearchUrl, pieceKind, transitIcon } from "@/lib/planStyle";
+import type { Itinerary, ItineraryStop, Trip } from "@/lib/schema";
+import { KIND_STYLE, mapsRouteUrl, mapsSearchUrl, pieceKind, searchUrl, transitIcon } from "@/lib/planStyle";
 import type { MapStop } from "./PlanMap";
 
 // Leaflet needs the browser, so the map never renders on the server.
@@ -50,6 +50,8 @@ export function NightPlan({ itinerary, trip }: { itinerary: Itinerary; trip: Tri
     trip.area,
     `${trip.partySize} ${trip.partySize === 1 ? "person" : "people"}`,
     trip.budget,
+    // Plans saved before the rides setting existed don't say either way.
+    trip.rides === true ? "🚕 Short rides OK" : trip.rides === false ? "🚶 Walkable night" : null,
     stops.length > 1 ? `${stops[0].time} → ${stops[stops.length - 1].time}` : stops[0]?.time,
   ].filter(Boolean);
 
@@ -147,17 +149,7 @@ export function NightPlan({ itinerary, trip }: { itinerary: Itinerary; trip: Tri
             const isActive = active === i;
             return (
               <li key={i} id={`stop-${i}`} className="scroll-mt-4">
-                {i > 0 && (
-                  <div className="flex items-center gap-3 py-3 pl-[4.25rem] text-xs text-muted sm:pl-[5.25rem]">
-                    <span aria-hidden className="-ml-[2.1rem] h-8 border-l-2 border-dashed border-line sm:-ml-[2.6rem]" />
-                    {stop.getting_there && (
-                      <span className="flex items-center gap-2">
-                        <span aria-hidden className="text-base">{transitIcon(stop.getting_there)}</span>
-                        {stop.getting_there}
-                      </span>
-                    )}
-                  </div>
-                )}
+                {i > 0 && <Leg stop={stop} rides={Boolean(trip.rides)} />}
                 <article
                   onMouseEnter={() => setActive(i)}
                   onClick={() => setActive(i)}
@@ -186,16 +178,14 @@ export function NightPlan({ itinerary, trip }: { itinerary: Itinerary; trip: Tri
                     </p>
                     {stop.notes && <p className="mt-3 text-sm leading-relaxed">{stop.notes}</p>}
                     <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                      {stop.url && (
-                        <a
-                          href={stop.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="rounded-full border border-line px-3 py-1 text-muted hover:border-muted hover:text-fg"
-                        >
-                          Website ↗
-                        </a>
-                      )}
+                      <a
+                        href={stop.url || searchUrl(stop.name, stop.address)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="rounded-full border border-line px-3 py-1 text-muted hover:border-muted hover:text-fg"
+                      >
+                        {stop.url ? "Website ↗" : "Search ↗"}
+                      </a>
                       <a
                         href={mapsSearchUrl(stop.name, stop.address)}
                         target="_blank"
@@ -231,6 +221,86 @@ export function NightPlan({ itinerary, trip }: { itinerary: Itinerary; trip: Tri
           </ul>
         </section>
       )}
+    </div>
+  );
+}
+
+const RIDE = /\b(cab|taxi|uber|lyft|train|subway|bus|ride|ferry)\b/i;
+const MINUTES =
+  /,?\s*(?:(?:about|around|roughly|only|just)\s+)?(?:an?\s+(?:easy|quick|short|brisk)\s+)?\d+\s*(?:(?:-|–|to)\s*\d+\s*)?-?\s*min(?:ute)?s?(?:\s+walk)?/gi;
+
+/**
+ * Removes Claude's guessed walking times ("about 12-15 minutes") once the real
+ * walk is shown, keeping the directions. Ride times ("a 10-minute cab") stay.
+ */
+function withoutGuessedMinutes(text: string) {
+  return text
+    .split(/(?<=[.!?])\s+/)
+    // Within a sentence, "walk ..., or grab a cab ..." parts are handled separately.
+    .map((sentence) =>
+      sentence
+        .split(/(,\s*or\s+|;\s*)/)
+        .map((part) => (RIDE.test(part) ? part : part.replace(MINUTES, "")))
+        .join(""),
+    )
+    .map((sentence) => sentence.replace(/\s+([.,!?])/g, "$1").replace(/,\s*\./g, ".").trim())
+    .filter((sentence) => sentence.replace(/[.!?]/g, "").trim().split(/\s+/).length > 2)
+    .join(" ");
+}
+
+/** The gap between two stops: the real walk from the map, plus Claude's advice. */
+function Leg({ stop, rides }: { stop: ItineraryStop; rides: boolean }) {
+  const { walk } = stop;
+  // Older plans have Claude's guessed times ("walk about 10-12 minutes"); once the
+  // real walk is known, drop advice that states minutes so the two don't disagree.
+  const advice = walk ? withoutGuessedMinutes(stop.getting_there) : stop.getting_there;
+  let headline = null;
+  if (walk) {
+    const mins = `${walk.estimated ? "~" : ""}${walk.minutes} min`;
+    const miles = `${walk.miles} mi`;
+    if (walk.minutes <= (rides ? 20 : 25)) {
+      headline = (
+        <>
+          <span aria-hidden className="text-base">🚶</span>
+          <span>
+            <strong className="font-semibold text-fg">{mins} walk</strong> · {miles}
+          </span>
+        </>
+      );
+    } else if (rides) {
+      const icon = advice && transitIcon(advice) !== "🚶" ? transitIcon(advice) : "🚇";
+      headline = (
+        <>
+          <span aria-hidden className="text-base">{icon}</span>
+          <span>
+            <strong className="font-semibold text-fg">Quick ride</strong> · {mins} on foot ({miles})
+          </span>
+        </>
+      );
+    } else {
+      headline = (
+        <>
+          <span aria-hidden className="text-base">🚶</span>
+          <span>
+            <strong className="font-semibold text-fg">{mins} walk</strong> ({miles}) · a cab or subway is quicker
+          </span>
+        </>
+      );
+    }
+  }
+
+  return (
+    <div className="flex gap-3 py-3 pl-[4.25rem] text-xs text-muted sm:pl-[5.25rem]">
+      <span aria-hidden className="-ml-[2.1rem] min-h-8 border-l-2 border-dashed border-line sm:-ml-[2.6rem]" />
+      <div className="space-y-1 self-center">
+        {headline && <p className="flex items-center gap-2">{headline}</p>}
+        {advice && (
+          <p className={headline ? "pl-7 text-muted/80" : "flex items-center gap-2"}>
+            {!headline && <span aria-hidden className="text-base">{transitIcon(advice)}</span>}
+            {advice}
+          </p>
+        )}
+      </div>
     </div>
   );
 }

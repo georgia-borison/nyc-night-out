@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { rememberPlan } from "@/lib/myPlans";
-import { NEIGHBORHOODS } from "@/lib/neighborhoods";
+import { areaInfo, isListedArea, visibleAreas } from "@/lib/neighborhoods";
 import { ACTIVITY_TYPES, BAR_TYPES, CUISINES } from "@/lib/cuisines";
 import {
   BUDGETS,
@@ -14,7 +14,9 @@ import {
   type Option,
   type PieceId,
   type Trip,
+  type VenueCoords,
 } from "@/lib/schema";
+import { milesBetween } from "@/lib/walk";
 import { Chip, ChipGroup, ErrorBox, GhostButton, PrimaryButton, Section } from "./ui";
 import { OptionCard, OptionSkeleton } from "./OptionCard";
 import { NightPlan } from "./NightPlan";
@@ -67,6 +69,10 @@ export function Planner() {
   const [cuisines, setCuisines] = useState<string[]>([]);
   const [barTypes, setBarTypes] = useState<string[]>([]);
   const [activityTypes, setActivityTypes] = useState<string[]>([]);
+  // OK with a quick cab or subway ride between stops; otherwise a walking night.
+  const [rides, setRides] = useState(false);
+  // Map lookups for picked venues, started the moment they're picked.
+  const locating = useRef(new Map<string, Promise<{ lat: number; lng: number } | null>>());
 
   const [results, setResults] = useState<Partial<Record<PieceId, PieceResult>>>({});
   const [picks, setPicks] = useState<Partial<Record<PieceId, Option>>>({});
@@ -82,7 +88,76 @@ export function Planner() {
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  const trip: Trip = { area, vibe, date, time, partySize, budget, cuisines, barTypes, activityTypes };
+  const trip: Trip = { area, vibe, date, time, partySize, budget, cuisines, barTypes, activityTypes, rides };
+
+  function toggleRides(next: boolean) {
+    setRides(next);
+    const info = areaInfo(area);
+    if (!info) return; // typed-in areas stay as they are
+    // Rides on: a walkable part becomes its whole area. Rides off: a whole area must be narrowed down.
+    if (next && info.parent) setArea(info.parent);
+    if (!next && info.parts) setArea("");
+  }
+
+  const venueKey = (o: Option) => `${o.name}|${o.address}`;
+
+  // Start the map lookup as soon as an option is picked, so building the
+  // itinerary doesn't wait on it.
+  function locate(o: Option) {
+    const key = venueKey(o);
+    if (locating.current.has(key)) return;
+    locating.current.set(
+      key,
+      postJSON<{ lat: number | null; lng: number | null }>("/api/locate", { name: o.name, address: o.address, area })
+        .then((r) => (r.lat !== null && r.lng !== null ? { lat: r.lat, lng: r.lng } : null))
+        .catch(() => null),
+    );
+  }
+
+  // Background map lookups for options: remember them (so picking needs no
+  // lookup) and store them on the options for the walking-distance note.
+  function applyCoords(piece: PieceId, coords: VenueCoords[]) {
+    if (!coords.length) return;
+    for (const c of coords) {
+      const key = `${c.name}|${c.address}`;
+      if (!locating.current.has(key)) locating.current.set(key, Promise.resolve({ lat: c.lat, lng: c.lng }));
+    }
+    const place = (o: Option) => {
+      const c = coords.find((x) => x.name === o.name);
+      return c ? { ...o, lat: c.lat, lng: c.lng } : o;
+    };
+    setResults((r) => {
+      const cur = r[piece];
+      return cur ? { ...r, [piece]: { ...cur, options: cur.options.map(place) } } : r;
+    });
+  }
+
+  // On a walking night, flag options that ended up well outside the chosen area.
+  function walkNote(o: Option): string | undefined {
+    const center = areaInfo(area);
+    if (rides || !center || o.lat === undefined || o.lng === undefined) return undefined;
+    // Straight-line distance, plus ~30% for the street grid, at 20 minutes a mile.
+    const minutes = milesBetween(center, { lat: o.lat, lng: o.lng }) * 1.3 * 20;
+    if (minutes <= 15) return undefined;
+    return `~${Math.round(minutes / 5) * 5} min walk from ${area}`;
+  }
+
+  // After link checks: a website that isn't the venue's becomes a search link,
+  // and a venue whose own site says it has closed is removed.
+  function applyLinkChecks(piece: PieceId, bad: string[], closed: string[]) {
+    if (!bad.length && !closed.length) return;
+    const fix = (o: Option) => (bad.includes(o.name) ? { ...o, url: "" } : o);
+    setResults((r) => {
+      const cur = r[piece];
+      if (!cur) return r;
+      return { ...r, [piece]: { ...cur, options: cur.options.filter((o) => !closed.includes(o.name)).map(fix) } };
+    });
+    setPicks((cur) => {
+      const pick = cur[piece];
+      if (!pick) return cur;
+      return { ...cur, [piece]: closed.includes(pick.name) ? undefined : fix(pick) };
+    });
+  }
   const orderedPieces = PIECES.filter((p) => pieces.includes(p.id));
   const showCuisines = pieces.includes("dinner");
   const showBars = pieces.some((p) => p === "pre_drinks" || p === "post_drinks");
@@ -102,6 +177,16 @@ export function Planner() {
         hint,
       });
       setSpent((c) => c + data.costUsd);
+      // Check the new options' websites in the background.
+      postJSON<{ bad: string[]; closed: string[]; coords: VenueCoords[] }>("/api/verify-links", {
+        area,
+        items: data.options,
+      })
+        .then(({ bad, closed, coords }) => {
+          applyLinkChecks(piece, bad, closed);
+          applyCoords(piece, coords);
+        })
+        .catch(() => {});
       setResults((r) => {
         let options = data.options;
         const picked = picks[piece];
@@ -174,6 +259,8 @@ export function Planner() {
               ...r,
               [event.piece]: { status: "done", options: event.options, seen: event.options.map((o) => o.name) },
             }));
+          else if (event.type === "links") applyLinkChecks(event.piece, event.bad, event.closed);
+          else if (event.type === "coords") applyCoords(event.piece, event.coords);
           else if (event.type === "done") {
             setSpent(event.costUsd);
             finished = true;
@@ -192,13 +279,21 @@ export function Planner() {
   }
 
   async function buildItinerary() {
-    const chosen = orderedPieces.flatMap((p) => (picks[p.id] ? [{ ...picks[p.id]!, piece: p.id }] : []));
+    const picked = orderedPieces.flatMap((p) => (picks[p.id] ? [{ ...picks[p.id]!, piece: p.id }] : []));
     setStep(4);
     setItinLoading(true);
     setItinError(null);
     setItinerary(null);
     setSavedId(null);
     try {
+      // Coordinates were looked up while choosing; these are almost always ready.
+      const chosen = await Promise.all(
+        picked.map(async (o) => {
+          locate(o);
+          const point = await locating.current.get(venueKey(o));
+          return point ? { ...o, ...point } : o;
+        }),
+      );
       const data = await postJSON<{ itinerary: Itinerary; costUsd: number }>("/api/itinerary", {
         ...trip,
         picks: chosen,
@@ -265,12 +360,28 @@ export function Planner() {
       {step === 0 && (
         <div className="space-y-8">
           <Heading title="Where are you headed?" sub="Pick the neighborhood you'll be around tonight." />
-          {NEIGHBORHOODS.map((b) => (
+          <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-line bg-surface p-4 transition hover:border-muted">
+            <input
+              type="checkbox"
+              checked={rides}
+              onChange={(e) => toggleRides(e.target.checked)}
+              className="mt-0.5 size-5 shrink-0 accent-[var(--accent)]"
+            />
+            <span>
+              <span className="block font-medium">I&rsquo;m up for a quick cab or subway ride between stops</span>
+              <span className="mt-0.5 block text-sm text-muted">
+                {rides
+                  ? "Bigger neighborhoods are open to you, like the whole Upper West Side."
+                  : "Keeping it walkable. Big neighborhoods are split into smaller pieces so every stop is a short walk."}
+              </span>
+            </span>
+          </label>
+          {visibleAreas(rides).map((b) => (
             <Section key={b.borough} title={b.borough}>
               <div className="flex flex-wrap gap-2">
                 {b.areas.map((a) => (
-                  <Chip key={a} selected={area === a} onClick={() => setArea(a)}>
-                    {a}
+                  <Chip key={a.name} selected={area === a.name} onClick={() => setArea(a.name)}>
+                    {a.name}
                   </Chip>
                 ))}
               </div>
@@ -278,7 +389,7 @@ export function Planner() {
           ))}
           <Section title="Somewhere else" hint="Type a neighborhood, a cross street, or a venue you'll be near.">
             <input
-              value={NEIGHBORHOODS.some((b) => b.areas.includes(area)) ? "" : area}
+              value={isListedArea(area) ? "" : area}
               onChange={(e) => setArea(e.target.value)}
               placeholder="e.g. near Barclays Center, or Surprise me — anywhere in Brooklyn"
               className="w-full rounded-xl border border-line bg-surface px-4 py-3 outline-none focus:border-accent"
@@ -457,8 +568,13 @@ export function Planner() {
                           key={o.name}
                           option={o}
                           selected={picks[p.id]?.name === o.name}
+                          note={walkNote(o)}
                           onSelect={() =>
-                            setPicks((cur) => ({ ...cur, [p.id]: cur[p.id]?.name === o.name ? undefined : o }))
+                            setPicks((cur) => {
+                              const unpick = cur[p.id]?.name === o.name;
+                              if (!unpick) locate(o);
+                              return { ...cur, [p.id]: unpick ? undefined : o };
+                            })
                           }
                           onMoreLikeThis={() =>
                             fetchPiece(p.id, `Find more places similar to ${o.name} (${o.category}).`)
