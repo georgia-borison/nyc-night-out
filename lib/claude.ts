@@ -8,16 +8,16 @@ import type {
 import type { z } from "zod";
 import { SYSTEM_PROMPT } from "./prompt";
 
-const MODEL = "claude-opus-5";
+const MODEL = "claude-sonnet-5";
 const SUBMIT_TOOL = "submit";
 const MAX_TURNS = 4;
 
-// Claude Opus 5 list prices, USD per token, used for the cost readout.
+// Claude Sonnet 5 list prices, USD per token, used for the cost readout.
 const PRICE = {
-  input: 5 / 1e6,
-  output: 25 / 1e6,
-  cacheWrite: 6.25 / 1e6,
-  cacheRead: 0.5 / 1e6,
+  input: 2 / 1e6,
+  output: 10 / 1e6,
+  cacheWrite: 2.5 / 1e6,
+  cacheRead: 0.2 / 1e6,
   webSearch: 10 / 1000,
 };
 
@@ -68,6 +68,9 @@ export class PlannerError extends Error {
  * Ask Claude for structured JSON, optionally letting it search the web first.
  * The answer arrives as the input of a strict "submit" tool, then gets
  * validated with zod. Also returns the approximate cost of the call.
+ *
+ * Optional hooks report progress while it runs: each web search query, and
+ * the partially written answer (parsed as far as it goes) as it streams in.
  */
 export async function askClaude<T>(opts: {
   prompt: string;
@@ -76,6 +79,8 @@ export async function askClaude<T>(opts: {
   submitDescription: string;
   webSearch: boolean;
   maxSearches?: number;
+  onSearch?: (query: string) => void;
+  onPartial?: (input: unknown) => void;
 }): Promise<{ data: T; costUsd: number }> {
   const anthropic = getClient();
 
@@ -85,6 +90,9 @@ export async function askClaude<T>(opts: {
       description: opts.submitDescription,
       strict: true,
       input_schema: opts.jsonSchema as BetaTool["input_schema"],
+      // Stream the answer as it is written so the page can fill in early.
+      // The finished input is still validated with zod below.
+      ...(opts.onPartial ? { eager_input_streaming: true } : {}),
     },
   ];
   if (opts.webSearch) {
@@ -109,20 +117,43 @@ export async function askClaude<T>(opts: {
   for (let turn = 0; turn < MAX_TURNS; turn++) {
     let message;
     try {
-      message = await anthropic.beta.messages
-        .stream({
-          model: MODEL,
-          max_tokens: 16000,
-          thinking: { type: "adaptive" },
-          // Low effort keeps thinking short and tool calls few, which is most of the cost.
-          output_config: { effort: "low" },
-          betas: ["server-side-fallback-2026-07-01"],
-          fallbacks: "default",
-          system: SYSTEM_PROMPT,
-          tools,
-          messages,
-        })
-        .finalMessage();
+      const stream = anthropic.beta.messages.stream({
+        model: MODEL,
+        max_tokens: 16000,
+        thinking: { type: "adaptive" },
+        // Low effort keeps thinking short and tool calls few, which is most of the cost.
+        output_config: { effort: "low" },
+        system: SYSTEM_PROMPT,
+        tools,
+        messages,
+      });
+      const { onSearch, onPartial } = opts;
+      if (onSearch) {
+        stream.on("contentBlock", (block) => {
+          if (block.type !== "server_tool_use") return;
+          // Searches arrive either as a direct web_search call ({ query }) or,
+          // with dynamic filtering, inside generated code that calls web_search.
+          const input = (block.input ?? {}) as { query?: unknown; code?: unknown };
+          if (typeof input.query === "string") return onSearch(input.query);
+          const code = typeof input.code === "string" ? input.code : "";
+          const queries = [...code.matchAll(/web_search\(\s*(?:query\s*=\s*)?["'`]([^"'`]+)["'`]/g)].map((m) => m[1]);
+          if (queries.length) queries.forEach(onSearch);
+          else console.log(`[claude] server tool ${block.name}`, JSON.stringify(input).slice(0, 300));
+        });
+      }
+      if (onPartial) {
+        stream.on("streamEvent", (event, snapshot) => {
+          if (event.type !== "content_block_delta" || event.delta.type !== "input_json_delta") return;
+          const block = snapshot.content[event.index];
+          if (block?.type !== "tool_use" || block.name !== SUBMIT_TOOL) return;
+          try {
+            onPartial(block.input);
+          } catch {
+            // Not parseable yet; the next delta will be.
+          }
+        });
+      }
+      message = await stream.finalMessage();
     } catch (err) {
       console.error("[claude]", err);
       throw toPlannerError(err);
@@ -212,8 +243,13 @@ function toPlannerError(err: unknown): PlannerError {
   return new PlannerError("Something went wrong. Please try again.", 500);
 }
 
-export function errorResponse(err: unknown) {
+export function describeError(err: unknown) {
   const e = toPlannerError(err);
   if (!(err instanceof PlannerError)) console.error(err);
-  return Response.json({ error: e.message }, { status: e.status });
+  return { message: e.message, status: e.status };
+}
+
+export function errorResponse(err: unknown) {
+  const { message, status } = describeError(err);
+  return Response.json({ error: message }, { status });
 }

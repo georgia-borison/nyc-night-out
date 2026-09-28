@@ -57,14 +57,40 @@ export const OptionsResultSchema = z.object({
   options: z.array(OptionSchema),
 });
 
+// Claude occasionally writes its search reasoning into the name field
+// ("Let me check whether..."). Drop any option whose name reads like prose.
+const PROSE_OPENER = /^(let me|let's|i'll|i will|i need|i should|i'm|i am|searching|based on|looking|now,? |okay|ok,? |hmm|note:)/i;
+
+export function looksLikeVenueName(name: string) {
+  const n = name.trim();
+  return n.length > 0 && n.length <= 60 && !/[\r\n]/.test(n) && !PROSE_OPENER.test(n);
+}
+
+export function cleanOptions(options: Option[]) {
+  return options.filter((o) => {
+    if (looksLikeVenueName(o.name)) return true;
+    console.warn("[clean] dropped option with a non-name title:", JSON.stringify(o.name.slice(0, 120)));
+    return false;
+  });
+}
+
 // The first search: every selected part of the night in one call.
 export const NightRequestSchema = TripSchema.extend({
   pieces: z.array(z.enum(PIECE_IDS)).min(1).max(PIECES.length),
 });
 
+export const SectionSchema = z.object({ piece: z.enum(PIECE_IDS), options: z.array(OptionSchema) });
+
 export const NightResultSchema = z.object({
-  sections: z.array(z.object({ piece: z.enum(PIECE_IDS), options: z.array(OptionSchema) })),
+  sections: z.array(SectionSchema),
 });
+
+// Lines streamed back by /api/night, one JSON object per line.
+export type NightEvent =
+  | { type: "search"; query: string }
+  | { type: "section"; piece: PieceId; options: Option[] }
+  | { type: "done"; costUsd: number }
+  | { type: "error"; error: string };
 
 export const ItineraryStopSchema = z.object({
   time: z.string(),
@@ -75,6 +101,9 @@ export const ItineraryStopSchema = z.object({
   url: z.string(),
   notes: z.string(),
   getting_there: z.string(),
+  // Added by the server after geocoding; not part of Claude's output.
+  lat: z.number().optional(),
+  lng: z.number().optional(),
 });
 export type ItineraryStop = z.infer<typeof ItineraryStopSchema>;
 
@@ -93,6 +122,18 @@ export const ItineraryRequestSchema = TripSchema.extend({
   picks: z.array(PickSchema).min(1).max(PIECES.length),
 });
 
+export const SavePlanSchema = z.object({
+  trip: TripSchema,
+  itinerary: ItinerarySchema,
+});
+
+export type SavedPlan = {
+  id: string;
+  createdAt: string;
+  trip: Trip;
+  itinerary: Itinerary;
+};
+
 // JSON schemas handed to Claude as strict tool inputs. Kept in sync with the
 // zod schemas above, which re-validate whatever comes back.
 const str = { type: "string" } as const;
@@ -102,7 +143,7 @@ const OPTION_JSON_SCHEMA = {
   additionalProperties: false,
   required: ["name", "category", "neighborhood", "address", "price", "why", "tip", "when", "url"],
   properties: {
-    name: str,
+    name: { type: "string", description: "Only the venue's name, e.g. 'I Sodi'. No commentary or notes." },
     category: {
       type: "string",
       description:

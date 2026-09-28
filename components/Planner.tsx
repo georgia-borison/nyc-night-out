@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
+import { rememberPlan } from "@/lib/myPlans";
 import { NEIGHBORHOODS } from "@/lib/neighborhoods";
 import { ACTIVITY_TYPES, BAR_TYPES, CUISINES } from "@/lib/cuisines";
 import {
@@ -8,13 +10,14 @@ import {
   PIECES,
   type Budget,
   type Itinerary,
+  type NightEvent,
   type Option,
   type PieceId,
   type Trip,
 } from "@/lib/schema";
 import { Chip, ChipGroup, ErrorBox, GhostButton, PrimaryButton, Section } from "./ui";
 import { OptionCard, OptionSkeleton } from "./OptionCard";
-import { Timeline } from "./Timeline";
+import { NightPlan } from "./NightPlan";
 
 type PieceResult = {
   status: "loading" | "done" | "error";
@@ -73,6 +76,11 @@ export function Planner() {
   const [itinError, setItinError] = useState<string | null>(null);
   // Running API cost for this night, shown so searches never surprise you.
   const [spent, setSpent] = useState(0);
+  // Latest web search Claude ran, shown while the night is loading.
+  const [searchStatus, setSearchStatus] = useState<string | null>(null);
+  const [savedId, setSavedId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const trip: Trip = { area, vibe, date, time, partySize, budget, cuisines, barTypes, activityTypes };
   const orderedPieces = PIECES.filter((p) => pieces.includes(p.id));
@@ -119,26 +127,67 @@ export function Planner() {
     setResults(Object.fromEntries(orderedPieces.map((p) => [p.id, { status: "loading", options: [], seen: [] }])));
     setPicks({});
     setItinerary(null);
+    setSavedId(null);
     setSpent(0);
+    setSearchStatus(null);
     setStep(3);
-    try {
-      // One call covers every part of the night, sharing a few searches.
-      const data = await postJSON<{ sections: { piece: PieceId; options: Option[] }[]; costUsd: number }>(
-        "/api/night",
-        { ...trip, pieces },
-      );
-      setSpent(data.costUsd);
-      setResults(
+
+    const fail = (error: string) =>
+      setResults((r) =>
         Object.fromEntries(
           orderedPieces.map((p) => {
-            const options = data.sections.filter((s) => s.piece === p.id).flatMap((s) => s.options);
-            return [p.id, { status: "done", options, seen: options.map((o) => o.name) }];
+            const cur = r[p.id];
+            // Sections that already arrived keep their options.
+            return [p.id, cur?.status === "done" ? cur : { status: "error", options: [], seen: [], error }];
           }),
         ),
       );
+
+    try {
+      // One call covers every part of the night. It streams one JSON event per
+      // line: each search as it runs, then each section as soon as it's written.
+      const res = await fetch("/api/night", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...trip, pieces }),
+      });
+      if (!res.ok || !res.body) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? `Request failed (${res.status})`);
+      }
+
+      const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+      let buffer = "";
+      let finished = false;
+      while (!finished) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += value;
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const event = JSON.parse(line) as NightEvent;
+          if (event.type === "search") setSearchStatus(event.query);
+          else if (event.type === "section")
+            setResults((r) => ({
+              ...r,
+              [event.piece]: { status: "done", options: event.options, seen: event.options.map((o) => o.name) },
+            }));
+          else if (event.type === "done") {
+            setSpent(event.costUsd);
+            finished = true;
+          } else if (event.type === "error") {
+            fail(event.error);
+            finished = true;
+          }
+        }
+      }
+      if (!finished) fail("The connection dropped before the search finished. Please try again.");
     } catch (err) {
-      const error = (err as Error).message;
-      setResults(Object.fromEntries(orderedPieces.map((p) => [p.id, { status: "error", options: [], seen: [], error }])));
+      fail((err as Error).message);
+    } finally {
+      setSearchStatus(null);
     }
   }
 
@@ -148,6 +197,7 @@ export function Planner() {
     setItinLoading(true);
     setItinError(null);
     setItinerary(null);
+    setSavedId(null);
     try {
       const data = await postJSON<{ itinerary: Itinerary; costUsd: number }>("/api/itinerary", {
         ...trip,
@@ -159,6 +209,32 @@ export function Planner() {
       setItinError((err as Error).message);
     } finally {
       setItinLoading(false);
+    }
+  }
+
+  async function save() {
+    if (!itinerary) return;
+    setSaving(true);
+    setItinError(null);
+    try {
+      const { id } = await postJSON<{ id: string }>("/api/plans", { trip, itinerary });
+      rememberPlan({ id, title: itinerary.title, date, area, savedAt: new Date().toISOString() });
+      setSavedId(id);
+    } catch (err) {
+      setItinError((err as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function copyLink() {
+    if (!savedId) return;
+    try {
+      await navigator.clipboard.writeText(`${window.location.origin}/plan/${savedId}`);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard can be blocked; the saved plan page has the link too.
     }
   }
 
@@ -183,7 +259,7 @@ export function Planner() {
   const anyLoading = orderedPieces.some((p) => results[p.id]?.status === "loading");
 
   return (
-    <div className="space-y-8">
+    <div className={`space-y-8 ${step < 4 ? "mx-auto max-w-4xl" : ""}`}>
       <Stepper step={step} onJump={(i) => i < step && setStep(i)} />
 
       {step === 0 && (
@@ -336,6 +412,18 @@ export function Planner() {
             title={`Your night in ${area}`}
             sub="Tap one option for each part of the night. Searching takes a minute, since it's checking what's open and on tonight."
           />
+          {anyLoading && (
+            <p className="flex items-center gap-2 text-sm text-muted" aria-live="polite">
+              <span aria-hidden className="size-2 animate-pulse rounded-full bg-accent" />
+              {searchStatus ? (
+                <>
+                  Searching the web: <span className="italic text-fg">&ldquo;{searchStatus}&rdquo;</span>
+                </>
+              ) : (
+                "Thinking about your night…"
+              )}
+            </p>
+          )}
           {orderedPieces.map((p) => {
             const r = results[p.id];
             return (
@@ -388,7 +476,7 @@ export function Planner() {
           <div className="sticky bottom-4 z-10 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-surface/90 p-3 pl-5 backdrop-blur">
             <span className="text-sm text-muted">
               {pickCount} of {orderedPieces.length} picked
-              {anyLoading ? " · still searching…" : spent > 0 && ` · about ${spent.toFixed(2)} in API costs so far`}
+              {anyLoading ? " · still searching…" : spent > 0 && ` · about $${spent.toFixed(2)} in API costs so far`}
             </span>
             <div className="flex gap-2">
               <GhostButton onClick={() => setStep(2)}>Edit</GhostButton>
@@ -404,16 +492,28 @@ export function Planner() {
         <div className="space-y-8">
           {itinLoading && (
             <div className="space-y-4">
-              <p className="text-muted">Putting your night in order…</p>
+              <p className="text-muted">Putting your night in order and mapping it out…</p>
               <OptionSkeleton />
               <OptionSkeleton />
             </div>
           )}
-          {itinError && <ErrorBox message={itinError} onRetry={buildItinerary} />}
+          {itinError && <ErrorBox message={itinError} onRetry={itinerary ? save : buildItinerary} />}
           {itinerary && (
             <>
-              <Timeline itinerary={itinerary} />
+              <NightPlan itinerary={itinerary} trip={trip} />
               <div className="flex flex-wrap items-center gap-3">
+                {savedId ? (
+                  <>
+                    <PrimaryButton onClick={copyLink}>{copied ? "Link copied ✓" : "Copy share link"}</PrimaryButton>
+                    <Link href={`/plan/${savedId}`} className="text-sm text-muted underline underline-offset-4">
+                      Open saved plan
+                    </Link>
+                  </>
+                ) : (
+                  <PrimaryButton onClick={save} disabled={saving}>
+                    {saving ? "Saving…" : "Save & get a share link"}
+                  </PrimaryButton>
+                )}
                 <GhostButton onClick={() => setStep(3)}>← Change picks</GhostButton>
               </div>
               {spent > 0 && <p className="text-xs text-muted">This plan cost about ${spent.toFixed(2)} in API usage.</p>}

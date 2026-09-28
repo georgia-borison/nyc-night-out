@@ -8,7 +8,7 @@ Who you're planning for: adults roughly 27-35. They want places with good food, 
 
 Accuracy:
 - Only suggest places that are open and operating now.
-- You get only a few web searches, so make each one count. For well-established places, rely on what you already know. Save searches for things you can't know on your own: what's happening on this date, recent openings, and whether a place you're unsure about has closed. Use broad searches that cover several needs at once, such as "West Village new restaurants and bars 2026" or "NYC events September 23 2026". Never search once per venue.
+- You get only a few web searches, so make each one count. For well-established places, rely on what you already know. Save searches for things you can't know on your own: what's happening on this date, recent openings, and whether a place you're unsure about has closed. Use broad searches that cover several needs at once, such as "West Village new restaurants and bars 2026" or "NYC events September 23 2026". Never search once per venue. Always run at least one search before answering, to catch recent closures and openings in the area, or what's on this date.
 - Events and shows must happen on the requested date, within a reasonable window around the requested time. If you can't confirm one, don't include it.
 - Give a real URL for every option: the official site, a ticket page, or a reputable listing. Use the official site if you know it; don't search just to find a URL.
 - Don't make up addresses. If you aren't sure of one, use an empty string.
@@ -20,7 +20,7 @@ Taste:
 - Label each option's category with the specific cuisine or style, like "Sichuan", "Neapolitan pizza", "Oaxacan", "Natural wine bar" or "Jazz club", never a broad bucket like "Asian" or "Latin".
 - Write the "why" in a warm, specific, non-generic voice.
 
-When you have your final answer, call the submit tool exactly once. Don't write the answer as text.`;
+When you have your final answer, call the submit tool exactly once. Don't write the answer as text. Do all your searching and reasoning before calling submit. Every field holds only the final answer, never notes about your process. The name field is just the venue's name.`;
 
 const PIECE_GUIDANCE: Record<PieceId, string> = {
   pre_drinks:

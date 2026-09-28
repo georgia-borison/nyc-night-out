@@ -1,6 +1,6 @@
 import { askClaude, errorResponse } from "@/lib/claude";
 import { suggestPrompt } from "@/lib/prompt";
-import { OPTIONS_JSON_SCHEMA, OptionsResultSchema, SuggestRequestSchema } from "@/lib/schema";
+import { OPTIONS_JSON_SCHEMA, OptionsResultSchema, SuggestRequestSchema, cleanOptions } from "@/lib/schema";
 
 export const maxDuration = 300;
 
@@ -20,7 +20,7 @@ export async function POST(request: Request) {
       // Refreshes lean on what Claude knows; one search to catch anything new.
       maxSearches: 1,
     });
-    return Response.json({ ...data, costUsd });
+    return Response.json({ options: cleanOptions(data.options), costUsd });
   } catch (err) {
     return errorResponse(err);
   }
