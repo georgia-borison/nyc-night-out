@@ -109,3 +109,15 @@ input[type="time"]::-webkit-calendar-picker-indicator {
 .plan-map .leaflet-bar a:hover {
   background: var(--line);
 }
+
+/* Plan title entrance: a gentle fade-and-rise, skipped for reduced motion. */
+@keyframes plan-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+.plan-rise {
+  animation: plan-rise 600ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .plan-rise { animation: none; }
+}

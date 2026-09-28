@@ -12,8 +12,17 @@ const PlanMap = dynamic(() => import("./PlanMap"), {
   loading: () => <div className="skeleton h-full w-full" />,
 });
 
-function formatDate(date: string) {
-  return new Date(`${date}T12:00:00`).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+function shortDate(date: string) {
+  return new Date(`${date}T12:00:00`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+}
+
+/** "Tonight" / "Tomorrow" / weekday name, for the ticket-stub line above the title. */
+function planDateLabel(date: string) {
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
+  const days = Math.round((Date.parse(`${date}T12:00:00Z`) - Date.parse(`${today}T12:00:00Z`)) / 86_400_000);
+  if (days === 0) return "Tonight";
+  if (days === 1) return "Tomorrow";
+  return new Date(`${date}T12:00:00`).toLocaleDateString("en-US", { weekday: "long" });
 }
 
 export function NightPlan({ itinerary, trip }: { itinerary: Itinerary; trip: Trip }) {
@@ -36,8 +45,8 @@ export function NightPlan({ itinerary, trip }: { itinerary: Itinerary; trip: Tri
     document.getElementById(`stop-${i}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 
+  // The date already sits in the line above the title.
   const facts = [
-    formatDate(trip.date),
     trip.area,
     `${trip.partySize} ${trip.partySize === 1 ? "person" : "people"}`,
     trip.budget,
@@ -53,9 +62,24 @@ export function NightPlan({ itinerary, trip }: { itinerary: Itinerary; trip: Tri
           className="pointer-events-none absolute -right-20 -top-24 size-72 rounded-full opacity-30 blur-3xl"
           style={{ background: "radial-gradient(circle, var(--accent), transparent 70%)" }}
         />
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-accent">Your night out</p>
-        <h1 className="mt-2 font-display text-4xl italic leading-[1.05] sm:text-5xl">{itinerary.title}</h1>
-        <ul className="mt-4 flex flex-wrap gap-2">
+        <p className="plan-rise flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-semibold uppercase tracking-[0.15em] text-accent sm:tracking-[0.2em]">
+          <span aria-hidden>🌙</span>
+          <span className="whitespace-nowrap">{planDateLabel(trip.date)}&rsquo;s plan</span>
+          <span aria-hidden className="h-px w-6 bg-accent/50 sm:w-8" />
+          <span className="whitespace-nowrap text-muted">{shortDate(trip.date)}</span>
+        </p>
+        <h1
+          className="plan-rise mt-3 font-display text-4xl italic leading-[1.05] sm:text-6xl"
+          style={{ animationDelay: "80ms" }}
+        >
+          {itinerary.title.trim() || "Your Night Out"}
+        </h1>
+        {itinerary.tagline && (
+          <p className="plan-rise mt-2 text-lg text-muted" style={{ animationDelay: "160ms" }}>
+            {itinerary.tagline}
+          </p>
+        )}
+        <ul className="mt-5 flex flex-wrap gap-2">
           {facts.map((f) => (
             <li key={f} className="rounded-full border border-line bg-bg/60 px-3 py-1 text-xs text-muted">
               {f}
@@ -180,6 +204,11 @@ export function NightPlan({ itinerary, trip }: { itinerary: Itinerary; trip: Tri
                       >
                         Map ↗
                       </a>
+                      {mapStops.length > 0 && stop.lat === undefined && (
+                        <span className="self-center text-muted/70" title="We couldn't place this one precisely">
+                          Not on map
+                        </span>
+                      )}
                     </div>
                   </div>
                 </article>

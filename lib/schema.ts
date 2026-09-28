@@ -109,9 +109,13 @@ export type ItineraryStop = z.infer<typeof ItineraryStopSchema>;
 
 export const ItinerarySchema = z.object({
   title: z.string(),
+  // Optional so plans saved before these fields existed still load.
+  tagline: z.string().optional(),
   summary: z.string(),
   stops: z.array(ItineraryStopSchema),
   tips: z.array(z.string()),
+  // Which version of the map lookup placed the pins (see lib/geocode.ts).
+  geoVersion: z.number().optional(),
 });
 export type Itinerary = z.infer<typeof ItinerarySchema>;
 
@@ -137,6 +141,11 @@ export type SavedPlan = {
 // JSON schemas handed to Claude as strict tool inputs. Kept in sync with the
 // zod schemas above, which re-validate whatever comes back.
 const str = { type: "string" } as const;
+const ADDRESS = {
+  type: "string",
+  description:
+    "Full street address with house number, street, borough and ZIP, e.g. '2020 Broadway, New York, NY 10023'. Never a neighborhood name. Empty string if unsure.",
+} as const;
 
 const OPTION_JSON_SCHEMA = {
   type: "object",
@@ -150,7 +159,7 @@ const OPTION_JSON_SCHEMA = {
         "Specific type, e.g. 'Sichuan', 'Oaxacan', 'Natural wine bar', 'Jazz club', 'Stand-up comedy'. Never a broad bucket like 'Asian'.",
     },
     neighborhood: str,
-    address: { type: "string", description: "Street address, or empty string if unknown" },
+    address: ADDRESS,
     price: { type: "string", description: "One of $, $$, $$$, $$$$, or 'Free'" },
     why: { type: "string", description: "One sentence on why it fits this night" },
     tip: { type: "string", description: "Practical tip: reservations, what to order, arrive-by, cover" },
@@ -192,9 +201,17 @@ export const NIGHT_JSON_SCHEMA = {
 export const ITINERARY_JSON_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["title", "summary", "stops", "tips"],
+  required: ["title", "tagline", "summary", "stops", "tips"],
   properties: {
-    title: { type: "string", description: "Short, fun name for the night (max ~6 words)" },
+    title: {
+      type: "string",
+      description:
+        "Required, never empty. A playful 2-6 word name for the night that riffs on the vibe, the weather or the neighborhood, e.g. 'Rain Check? Never.', 'Uptown Low & Slow', 'Negronis Before Noodles'.",
+    },
+    tagline: {
+      type: "string",
+      description: "One short line under the title, e.g. 'A rainy-night date with wine, injera and paint'.",
+    },
     summary: { type: "string", description: "Two sentences on the shape of the night" },
     stops: {
       type: "array",
@@ -207,7 +224,7 @@ export const ITINERARY_JSON_SCHEMA = {
           piece: { type: "string", description: "Which part of the night, e.g. 'Dinner'" },
           name: str,
           category: str,
-          address: str,
+          address: ADDRESS,
           url: str,
           notes: { type: "string", description: "What to do/order there, how long to stay" },
           getting_there: {

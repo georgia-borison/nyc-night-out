@@ -11,7 +11,7 @@ Accuracy:
 - You get only a few web searches, so make each one count. For well-established places, rely on what you already know. Save searches for things you can't know on your own: what's happening on this date, recent openings, and whether a place you're unsure about has closed. Use broad searches that cover several needs at once, such as "West Village new restaurants and bars 2026" or "NYC events September 23 2026". Never search once per venue. Always run at least one search before answering, to catch recent closures and openings in the area, or what's on this date.
 - Events and shows must happen on the requested date, within a reasonable window around the requested time. If you can't confirm one, don't include it.
 - Give a real URL for every option: the official site, a ticket page, or a reputable listing. Use the official site if you know it; don't search just to find a URL.
-- Don't make up addresses. If you aren't sure of one, use an empty string.
+- Don't make up addresses. An address is always a full street address with house number, street, borough and ZIP (e.g. "2020 Broadway, New York, NY 10023"), never a neighborhood name. If you aren't sure of one, use an empty string.
 
 Taste:
 - Keep options close to the requested area. Walkable is best; a short subway or cab ride is fine when the pick is clearly worth it.
@@ -124,6 +124,8 @@ Picks:
 ${stops}
 
 Order the stops in a sensible sequence. Normally that's pre-drinks, dinner, then the activity or event (or the activity before dinner if its fixed showtime demands it), then post-dinner drinks, then dancing. Respect any fixed showtimes. Give realistic arrival times starting around ${formatTime(trip.time)}, how long to spend at each place, and how to get from each stop to the next (walking minutes, subway line, or cab). Keep each stop's name, category, address and URL exactly as given.
+
+Give the night a playful 2-6 word title that riffs on the vibe, the weather or the neighborhood (like "Rain Check? Never." or "Uptown Low & Slow"), plus a one-line tagline. The title must never be empty.
 
 Call the submit tool with the itinerary.`;
 }

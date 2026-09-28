@@ -41,6 +41,19 @@ export async function getPlan(id: string): Promise<SavedPlan | null> {
   return (await readFile()).find((p) => p.id === id) ?? null;
 }
 
+/** Overwrite an existing plan, keeping its original expiry. */
+export async function updatePlan(plan: SavedPlan): Promise<void> {
+  if (redis) {
+    await redis.set(`plan:${plan.id}`, plan, { keepTtl: true });
+    return;
+  }
+  const plans = await readFile();
+  const i = plans.findIndex((p) => p.id === plan.id);
+  if (i === -1) return;
+  plans[i] = plan;
+  await fs.writeFile(FILE, JSON.stringify(plans, null, 2));
+}
+
 export async function savePlan(trip: Trip, itinerary: Itinerary): Promise<SavedPlan> {
   const plan: SavedPlan = { id: newId(), createdAt: new Date().toISOString(), trip, itinerary };
   if (redis) {

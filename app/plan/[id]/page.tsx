@@ -1,13 +1,15 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { NightPlan } from "@/components/NightPlan";
+import { repairPlan } from "@/lib/repairPlan";
 import { getPlan } from "@/lib/store";
 import { CopyLinkButton } from "./CopyLinkButton";
 
 export default async function PlanPage({ params }: PageProps<"/plan/[id]">) {
   const { id } = await params;
-  const plan = await getPlan(id);
-  if (!plan) notFound();
+  const saved = await getPlan(id);
+  if (!saved) notFound();
+  const plan = await repairPlan(saved);
 
   return (
     <div className="space-y-8">

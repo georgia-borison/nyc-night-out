@@ -207,6 +207,34 @@ export async function askClaude<T>(opts: {
   throw new PlannerError("Claude took too long to finish. Please try again.", 504);
 }
 
+/**
+ * One tiny call for a playful plan title, used when the itinerary came back
+ * without one. Returns null on any failure so the caller can use a template.
+ */
+export async function quickTitle(description: string): Promise<{ title: string; costUsd: number } | null> {
+  try {
+    const message = await getClient().messages.create({
+      model: MODEL,
+      max_tokens: 60,
+      // A few words don't need reasoning; this keeps the call to a fraction of a cent.
+      thinking: { type: "disabled" },
+      messages: [
+        {
+          role: "user",
+          content: `Write a playful 2-6 word title for this night out in New York, like "Rain Check? Never." or "Uptown Low & Slow". Reply with only the title.\n\n${description}`,
+        },
+      ],
+    });
+    const text = message.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("");
+    const title = text.trim().replace(/^["'“”]+|["'“”]+$/g, "").split("\n")[0].trim();
+    if (!title || title.length > 60) return null;
+    return { title, costUsd: costOf(message.usage) };
+  } catch (err) {
+    console.error("[claude] title fallback failed", err);
+    return null;
+  }
+}
+
 // The human-readable message inside an API error body, e.g. {"error":{"message":"..."}}.
 function apiMessage(err: InstanceType<typeof Anthropic.APIError>): string {
   const body = err.error as { error?: { message?: unknown } } | undefined;
