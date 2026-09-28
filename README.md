@@ -15,8 +15,7 @@ Plan a night out in New York for a late-20s/early-30s crowd. Pick a neighborhood
 
 - `app/api/night`: one Claude call that fills every part of the night. It streams each search and each section to the page as they happen.
 - `app/api/suggest`: refreshes a single section ("Show different options" / "More like this").
-- `app/api/itinerary`: orders your picks into a timeline with times and travel between stops.
-- `app/api/itinerary`: also looks up map coordinates for each stop (OpenStreetMap, `lib/geocode.ts`).
+- `app/api/itinerary`: orders your picks into a timeline with times and travel between stops, then looks up map coordinates for each stop (OpenStreetMap, `lib/geocode.ts`).
 - `app/api/plans` + `app/plan/[id]`: saved plans and share links, stored in Upstash Redis (`lib/store.ts`). "My plans" is kept per browser (`lib/myPlans.ts`).
 - `components/NightPlan.tsx` / `PlanMap.tsx`: the final plan page and its map.
 - `lib/prompt.ts`: the audience rules (no college bars, variety, confirm places are open). Tweak the app's taste here.
