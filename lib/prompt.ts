@@ -82,6 +82,11 @@ function today() {
   });
 }
 
+/** How many candidates to ask Claude for; the app vets them and shows the best 3. */
+export function candidateCount(trip: Trip) {
+  return trip.rides ? 4 : 5;
+}
+
 export function nightPrompt(trip: Trip, pieces: PieceId[]) {
   const ordered = PIECES.filter((p) => pieces.includes(p.id));
   const parts = ordered.map((p) => `- ${p.id} (${p.label}): ${PIECE_GUIDANCE[p.id]}`).join("\n");
@@ -91,10 +96,10 @@ Plan a night out in NYC.
 
 ${tripLines(trip)}
 
-Parts of the night to fill, each with 3 options:
+Parts of the night to fill, each with ${candidateCount(trip)} options:
 ${parts}
 
-Return one section per part, using the ids above. Never put the same venue in two sections.`;
+Return one section per part, using the ids above, with ${candidateCount(trip)} options in every section. Never put the same venue in two sections. Keep each "why" to one sentence under 20 words and each "tip" under 25 words.`;
 }
 
 export function suggestPrompt(req: SuggestRequest) {
@@ -106,7 +111,7 @@ ${tripLines(req)}
 
 What to find: ${PIECE_GUIDANCE[req.piece]}
 
-Return 3 options.`;
+Return ${candidateCount(req)} options. Keep each "why" to one sentence under 20 words and each "tip" under 25 words.`;
   const others = req.otherPieces.filter((p) => p !== req.piece);
   if (others.length) {
     prompt += `\n\nThe other parts of this night (${others.map(pieceLabel).join(", ")}) are being planned separately. Only suggest places that clearly belong in "${pieceLabel(req.piece)}", so the same venue doesn't turn up in two sections.`;

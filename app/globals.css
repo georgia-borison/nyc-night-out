@@ -121,3 +121,24 @@ input[type="time"]::-webkit-calendar-picker-indicator {
 @media (prefers-reduced-motion: reduce) {
   .plan-rise { animation: none; }
 }
+
+/* Loading card: bobbing moon, twinkling stars, fading phrases. */
+@keyframes moon-bob {
+  0%, 100% { transform: translateY(0) rotate(-4deg); }
+  50% { transform: translateY(-6px) rotate(4deg); }
+}
+@keyframes star-twinkle {
+  0%, 100% { opacity: 0.15; transform: scale(0.7); }
+  50% { opacity: 1; transform: scale(1.15); }
+}
+@keyframes phrase-fade {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+.moon-bob { animation: moon-bob 3.2s ease-in-out infinite; }
+.star-twinkle { animation: star-twinkle 2.1s ease-in-out infinite; }
+.phrase-fade { animation: phrase-fade 450ms ease-out both; }
+@media (prefers-reduced-motion: reduce) {
+  .moon-bob, .star-twinkle, .phrase-fade { animation: none; }
+  .star-twinkle { opacity: 0.8; }
+}

@@ -90,16 +90,14 @@ export const NightResultSchema = z.object({
   sections: z.array(SectionSchema),
 });
 
-export type VenueCoords = { name: string; address: string; lat: number; lng: number };
-
 // Lines streamed back by /api/night, one JSON object per line.
 export type NightEvent =
   | { type: "search"; query: string }
-  | { type: "section"; piece: PieceId; options: Option[] }
-  // Sent after a section: venues whose website didn't check out, and ones whose own site says they've closed.
-  | { type: "links"; piece: PieceId; bad: string[]; closed: string[] }
-  // Sent after a section: where each option is, for walking-distance notes and faster itineraries.
-  | { type: "coords"; piece: PieceId; coords: VenueCoords[] }
+  // Vetted options (real, open, and close enough), with coordinates. A section
+  // can arrive more than once; the latest replaces the earlier one.
+  | { type: "section"; piece: PieceId; options: Option[]; note?: string }
+  // Too few good options survived vetting; more are being found for this part.
+  | { type: "topup"; piece: PieceId }
   | { type: "done"; costUsd: number }
   | { type: "error"; error: string };
 
@@ -146,20 +144,6 @@ export const LocateRequestSchema = z.object({
   area: z.string().max(120),
 });
 
-export const VerifyLinksRequestSchema = z.object({
-  area: z.string().max(120),
-  items: z
-    .array(
-      z.object({
-        name: z.string().max(120),
-        url: z.string().max(500),
-        address: z.string().max(200),
-        neighborhood: z.string().max(120).optional(),
-      }),
-    )
-    .max(12),
-});
-
 export const SavePlanSchema = z.object({
   trip: TripSchema,
   itinerary: ItinerarySchema,
@@ -195,8 +179,8 @@ const OPTION_JSON_SCHEMA = {
     neighborhood: str,
     address: ADDRESS,
     price: { type: "string", description: "One of $, $$, $$$, $$$$, or 'Free'" },
-    why: { type: "string", description: "One sentence on why it fits this night" },
-    tip: { type: "string", description: "Practical tip: reservations, what to order, arrive-by, cover" },
+    why: { type: "string", description: "Why it fits this night: one sentence, under 20 words" },
+    tip: { type: "string", description: "Practical tip (reservations, what to order, arrive-by, cover), under 25 words" },
     when: {
       type: "string",
       description: "For events/shows: date and time. For venues: hours relevant to tonight. Empty string if unknown.",

@@ -1,6 +1,7 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { itineraryPhrases, searchPhrases } from "@/lib/loadingPhrases";
 import Link from "next/link";
 import { rememberPlan } from "@/lib/myPlans";
 import { areaInfo, isListedArea, visibleAreas } from "@/lib/neighborhoods";
@@ -14,11 +15,11 @@ import {
   type Option,
   type PieceId,
   type Trip,
-  type VenueCoords,
 } from "@/lib/schema";
 import { milesBetween } from "@/lib/walk";
 import { Chip, ChipGroup, ErrorBox, GhostButton, PrimaryButton, Section } from "./ui";
 import { OptionCard, OptionSkeleton } from "./OptionCard";
+import { LoadingShow } from "./LoadingShow";
 import { NightPlan } from "./NightPlan";
 
 type PieceResult = {
@@ -26,6 +27,10 @@ type PieceResult = {
   options: Option[];
   seen: string[];
   error?: string;
+  /** e.g. "Not much nearby matches your filters, so these are the closest." */
+  note?: string;
+  /** Too few good options so far; more nearby spots are being found. */
+  toppingUp?: boolean;
 };
 
 const STEPS = ["Where", "Vibe", "The night", "Options", "Itinerary"];
@@ -83,7 +88,10 @@ export function Planner() {
   // Running API cost for this night, shown so searches never surprise you.
   const [spent, setSpent] = useState(0);
   // Latest web search Claude ran, shown while the night is loading.
-  const [searchStatus, setSearchStatus] = useState<string | null>(null);
+  // Loading card: when the current wait started, and the latest real progress to flash.
+  const [waitStarted, setWaitStarted] = useState(0);
+  const [flash, setFlash] = useState<{ text: string; key: number } | null>(null);
+  const showProgress = (text: string) => setFlash({ text, key: Date.now() + Math.random() });
   const [savedId, setSavedId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -114,22 +122,14 @@ export function Planner() {
     );
   }
 
-  // Background map lookups for options: remember them (so picking needs no
-  // lookup) and store them on the options for the walking-distance note.
-  function applyCoords(piece: PieceId, coords: VenueCoords[]) {
-    if (!coords.length) return;
-    for (const c of coords) {
-      const key = `${c.name}|${c.address}`;
-      if (!locating.current.has(key)) locating.current.set(key, Promise.resolve({ lat: c.lat, lng: c.lng }));
+  // Vetted options arrive with coordinates: remember them so picking one needs no lookup.
+  function seedLocations(options: Option[]) {
+    for (const o of options) {
+      const key = venueKey(o);
+      if (o.lat !== undefined && o.lng !== undefined && !locating.current.has(key)) {
+        locating.current.set(key, Promise.resolve({ lat: o.lat, lng: o.lng }));
+      }
     }
-    const place = (o: Option) => {
-      const c = coords.find((x) => x.name === o.name);
-      return c ? { ...o, lat: c.lat, lng: c.lng } : o;
-    };
-    setResults((r) => {
-      const cur = r[piece];
-      return cur ? { ...r, [piece]: { ...cur, options: cur.options.map(place) } } : r;
-    });
   }
 
   // On a walking night, flag options that ended up well outside the chosen area.
@@ -142,22 +142,6 @@ export function Planner() {
     return `~${Math.round(minutes / 5) * 5} min walk from ${area}`;
   }
 
-  // After link checks: a website that isn't the venue's becomes a search link,
-  // and a venue whose own site says it has closed is removed.
-  function applyLinkChecks(piece: PieceId, bad: string[], closed: string[]) {
-    if (!bad.length && !closed.length) return;
-    const fix = (o: Option) => (bad.includes(o.name) ? { ...o, url: "" } : o);
-    setResults((r) => {
-      const cur = r[piece];
-      if (!cur) return r;
-      return { ...r, [piece]: { ...cur, options: cur.options.filter((o) => !closed.includes(o.name)).map(fix) } };
-    });
-    setPicks((cur) => {
-      const pick = cur[piece];
-      if (!pick) return cur;
-      return { ...cur, [piece]: closed.includes(pick.name) ? undefined : fix(pick) };
-    });
-  }
   const orderedPieces = PIECES.filter((p) => pieces.includes(p.id));
   const showCuisines = pieces.includes("dinner");
   const showBars = pieces.some((p) => p === "pre_drinks" || p === "post_drinks");
@@ -168,7 +152,7 @@ export function Planner() {
     const seen = prev?.seen ?? [];
     setResults((r) => ({ ...r, [piece]: { status: "loading", options: prev?.options ?? [], seen } }));
     try {
-      const data = await postJSON<{ options: Option[]; costUsd: number }>("/api/suggest", {
+      const data = await postJSON<{ options: Option[]; note?: string; costUsd: number }>("/api/suggest", {
         ...trip,
         piece,
         otherPieces: pieces,
@@ -178,15 +162,7 @@ export function Planner() {
       });
       setSpent((c) => c + data.costUsd);
       // Check the new options' websites in the background.
-      postJSON<{ bad: string[]; closed: string[]; coords: VenueCoords[] }>("/api/verify-links", {
-        area,
-        items: data.options,
-      })
-        .then(({ bad, closed, coords }) => {
-          applyLinkChecks(piece, bad, closed);
-          applyCoords(piece, coords);
-        })
-        .catch(() => {});
+      seedLocations(data.options);
       setResults((r) => {
         let options = data.options;
         const picked = picks[piece];
@@ -196,6 +172,7 @@ export function Planner() {
           [piece]: {
             status: "done",
             options,
+            note: data.note,
             seen: Array.from(new Set([...seen, ...data.options.map((o) => o.name)])),
           },
         };
@@ -214,7 +191,8 @@ export function Planner() {
     setItinerary(null);
     setSavedId(null);
     setSpent(0);
-    setSearchStatus(null);
+    setFlash(null);
+    setWaitStarted(Date.now());
     setStep(3);
 
     const fail = (error: string) =>
@@ -223,7 +201,7 @@ export function Planner() {
           orderedPieces.map((p) => {
             const cur = r[p.id];
             // Sections that already arrived keep their options.
-            return [p.id, cur?.status === "done" ? cur : { status: "error", options: [], seen: [], error }];
+            return [p.id, cur?.status === "done" ? { ...cur, toppingUp: false } : { status: "error", options: [], seen: [], error }];
           }),
         ),
       );
@@ -253,14 +231,28 @@ export function Planner() {
         for (const line of lines) {
           if (!line.trim()) continue;
           const event = JSON.parse(line) as NightEvent;
-          if (event.type === "search") setSearchStatus(event.query);
-          else if (event.type === "section")
+          if (event.type === "search") showProgress(`🔎 Searching: ${event.query}`);
+          else if (event.type === "section") {
+            seedLocations(event.options);
+            const label = PIECES.find((x) => x.id === event.piece)?.short ?? "That part";
+            showProgress(`✓ ${label} sorted`);
             setResults((r) => ({
               ...r,
-              [event.piece]: { status: "done", options: event.options, seen: event.options.map((o) => o.name) },
+              [event.piece]: {
+                status: "done",
+                options: event.options,
+                note: event.note,
+                seen: Array.from(new Set([...(r[event.piece]?.seen ?? []), ...event.options.map((o) => o.name)])),
+              },
             }));
-          else if (event.type === "links") applyLinkChecks(event.piece, event.bad, event.closed);
-          else if (event.type === "coords") applyCoords(event.piece, event.coords);
+          } else if (event.type === "topup") {
+            const label = PIECES.find((x) => x.id === event.piece)?.short.toLowerCase() ?? "more";
+            showProgress(`🔁 Swapping in ${rides ? "better" : "closer"} ${label} spots…`);
+            setResults((r) => ({
+              ...r,
+              [event.piece]: { ...(r[event.piece] ?? { status: "loading", options: [], seen: [] }), toppingUp: true },
+            }));
+          }
           else if (event.type === "done") {
             setSpent(event.costUsd);
             finished = true;
@@ -274,12 +266,12 @@ export function Planner() {
     } catch (err) {
       fail((err as Error).message);
     } finally {
-      setSearchStatus(null);
     }
   }
 
   async function buildItinerary() {
     const picked = orderedPieces.flatMap((p) => (picks[p.id] ? [{ ...picks[p.id]!, piece: p.id }] : []));
+    setWaitStarted(Date.now());
     setStep(4);
     setItinLoading(true);
     setItinError(null);
@@ -351,7 +343,25 @@ export function Planner() {
   }
 
   const pickCount = orderedPieces.filter((p) => picks[p.id]).length;
-  const anyLoading = orderedPieces.some((p) => results[p.id]?.status === "loading");
+  const anyLoading = orderedPieces.some((p) => results[p.id]?.status === "loading" || results[p.id]?.toppingUp);
+  const phrases = useMemo(
+    () => searchPhrases({ area, budget, pieces, rides }),
+    // A fresh shuffle for each search.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [waitStarted],
+  );
+  const planPhrases = useMemo(() => itineraryPhrases(), []);
+
+  // The browser tab shows progress, so it's visible while you're in other tabs.
+  const busy = (step === 3 && anyLoading) || (step === 4 && itinLoading);
+  const wasBusy = useRef(false);
+  useEffect(() => {
+    const base = "Night Out · NYC";
+    if (busy) document.title = step === 3 ? "⏳ Finding your night… · Night Out" : "⏳ Building your plan… · Night Out";
+    else if (wasBusy.current) document.title = step === 3 ? "✓ Your options are ready · Night Out" : "✓ Your plan is ready · Night Out";
+    else document.title = base;
+    wasBusy.current = busy;
+  }, [busy, step]);
 
   return (
     <div className={`space-y-8 ${step < 4 ? "mx-auto max-w-4xl" : ""}`}>
@@ -521,19 +531,10 @@ export function Planner() {
         <div className="space-y-10">
           <Heading
             title={`Your night in ${area}`}
-            sub="Tap one option for each part of the night. Searching takes a minute, since it's checking what's open and on tonight."
+            sub="Tap one option for each part of the night. We check that every spot is real, open and close by, so it takes a minute or two."
           />
           {anyLoading && (
-            <p className="flex items-center gap-2 text-sm text-muted" aria-live="polite">
-              <span aria-hidden className="size-2 animate-pulse rounded-full bg-accent" />
-              {searchStatus ? (
-                <>
-                  Searching the web: <span className="italic text-fg">&ldquo;{searchStatus}&rdquo;</span>
-                </>
-              ) : (
-                "Thinking about your night…"
-              )}
-            </p>
+            <LoadingShow phrases={phrases} flash={flash} startedAt={waitStarted} expected="Usually 1–2 minutes" />
           )}
           {orderedPieces.map((p) => {
             const r = results[p.id];
@@ -559,6 +560,13 @@ export function Planner() {
                     Finding {p.short.toLowerCase()} options in {area}…
                   </p>
                 )}
+                {r?.toppingUp && (
+                  <p className="flex items-center gap-2 text-sm text-muted">
+                    <span aria-hidden className="size-2 animate-pulse rounded-full bg-accent" />
+                    Some picks were too far or didn&rsquo;t check out, so we&rsquo;re finding closer spots…
+                  </p>
+                )}
+                {r?.note && !r.toppingUp && <p className="text-sm text-muted">📍 {r.note}</p>}
                 {r?.status === "error" && <ErrorBox message={r.error!} onRetry={() => fetchPiece(p.id)} />}
                 <div className="grid gap-3 sm:grid-cols-2">
                   {r?.status === "loading" && r.options.length === 0
@@ -608,7 +616,7 @@ export function Planner() {
         <div className="space-y-8">
           {itinLoading && (
             <div className="space-y-4">
-              <p className="text-muted">Putting your night in order and mapping it out…</p>
+              <LoadingShow phrases={planPhrases} flash={null} startedAt={waitStarted} expected="Usually under a minute" />
               <OptionSkeleton />
               <OptionSkeleton />
             </div>

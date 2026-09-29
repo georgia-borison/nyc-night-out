@@ -1,5 +1,7 @@
 import type { ItineraryStop } from "./schema";
+import { censusLocate } from "./censusGeocode";
 import { areaInfo, type Borough } from "./neighborhoods";
+import { nameWords } from "./verifyUrl";
 
 // Free OpenStreetMap geocoder. Its usage policy asks for at most one request
 // per second and an identifying User-Agent.
@@ -14,7 +16,7 @@ const MAX_KM_FROM_AREA = 6;
 // v3 added real walking times between stops.
 export const GEO_VERSION = 3;
 
-type Hit = { lat: number; lng: number; addresstype?: string; type?: string };
+type Hit = { lat: number; lng: number; addresstype?: string; type?: string; name?: string };
 type Where = { borough: Borough | null; explicit: boolean };
 type Center = { lat: number; lng: number } | null;
 
@@ -96,8 +98,14 @@ async function request(params: Record<string, string>): Promise<Hit[]> {
       signal: AbortSignal.timeout(5000),
     });
     if (!res.ok) return [];
-    const rows = (await res.json()) as { lat: string; lon: string; addresstype?: string; type?: string }[];
-    return rows.map((r) => ({ lat: Number(r.lat), lng: Number(r.lon), addresstype: r.addresstype, type: r.type }));
+    const rows = (await res.json()) as { lat: string; lon: string; addresstype?: string; type?: string; name?: string }[];
+    return rows.map((r) => ({
+      lat: Number(r.lat),
+      lng: Number(r.lon),
+      addresstype: r.addresstype,
+      type: r.type,
+      name: r.name,
+    }));
   } catch {
     return [];
   }
@@ -138,6 +146,9 @@ async function locate(stop: { name: string; address: string }, center: Center, a
   const zip = stop.address.match(/\b(1[01]\d{3})\b/)?.[1];
 
   if (street) {
+    // The Census geocoder is fast and has no rate limit; try it first.
+    const census = await censusLocate(stop.address);
+    if (census && (!center || where.explicit || km(census, center) <= MAX_KM_FROM_AREA)) return census;
     const structured = { street, city, state: "New York", ...(zip ? { postalcode: zip } : {}) };
     const hit = pick(await nominatim(structured), center, where) ?? pick(await nominatim({ q: `${street}, ${city}, New York` }), center, where);
     if (hit) return hit;
@@ -150,6 +161,34 @@ export async function locateVenue(name: string, address: string, area: string): 
   const { center, borough } = await areaContext(area);
   const hit = await locate({ name, address }, center, borough);
   return hit ? { lat: hit.lat, lng: hit.lng } : null;
+}
+
+const PLACE_WORDS = new Set([
+  "manhattan", "brooklyn", "queens", "bronx", "harlem", "village", "uptown", "downtown", "midtown",
+  "west", "east", "north", "south", "upper", "lower", "side", "broadway", "hudson", "river", "park",
+  "square", "street", "avenue", "city", "empire", "gotham", "astoria", "williamsburg", "chelsea", "soho",
+]);
+
+/**
+ * Whether OpenStreetMap has a place with this name within ~400 m of a point.
+ * The map is incomplete, so "no" is only meaningful alongside other signals.
+ */
+export async function onMapNear(name: string, point: { lat: number; lng: number }): Promise<boolean> {
+  const d = 0.004; // ~400 m
+  const viewbox = [point.lng - d, point.lat + d, point.lng + d, point.lat - d].join(",");
+  const full = name.replace(/[’‘]/g, "'");
+  // Words that identify the venue itself, not a place ("Manhattan" Cricket Club).
+  const distinctive = nameWords(full).filter((w) => w.length >= 3 && !PLACE_WORDS.has(w));
+  if (!distinctive.length) return false;
+  // A match must be named for the venue, not just on a street or in a building that is.
+  const named = (h: Hit) => distinctive.some((w) => h.name?.toLowerCase().includes(w));
+
+  if ((await nominatim({ q: full, viewbox, bounded: "1" })).some(named)) return true;
+  // The map often has a shorter name ("Awash" for "Awash Ethiopian Restaurant"),
+  // so try the first distinctive word on its own.
+  const core = distinctive.find((w) => w.length >= 4);
+  if (!core || core === full.toLowerCase()) return false;
+  return (await nominatim({ q: core, viewbox, bounded: "1" })).some((h) => h.name?.toLowerCase().includes(core));
 }
 
 /** Coordinates for each venue that can be placed (skips the rest). */
