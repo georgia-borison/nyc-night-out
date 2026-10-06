@@ -19,7 +19,7 @@ export type Vetted = {
   /** Real and open but outside the walking radius, closest first. Used only as a last resort. */
   far: Option[];
   /** Names that were ruled out, and why (for logs and to exclude from top-ups). */
-  dropped: { name: string; reason: "closed" | "unverified" | "too far" | "over budget" }[];
+  dropped: { name: string; reason: "closed" | "wrong address" | "unverified" | "too far" | "over budget" }[];
 };
 
 export const SHOW = 3;
@@ -126,6 +126,10 @@ export async function vetOptions(options: Option[], trip: VetTrip): Promise<Vett
       const point = points[i];
       if (links.closed.includes(o.name)) {
         dropped.push({ name: o.name, reason: "closed" });
+        return;
+      }
+      if (links.misplaced.includes(o.name)) {
+        dropped.push({ name: o.name, reason: "wrong address" });
         return;
       }
       let option: Option = point ? { ...o, lat: point.lat, lng: point.lng } : { ...o };

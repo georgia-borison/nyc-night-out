@@ -1,4 +1,5 @@
 import { areaInfo } from "./neighborhoods";
+import type { Candidate } from "./places";
 import {
   BUDGETS,
   budgetLabel,
@@ -180,6 +181,54 @@ Return ${n} options. Keep each "why" to one sentence under 20 words and each "ti
   }
   if (req.avoidCategories?.length) {
     prompt += `\n\nAlready covered: ${req.avoidCategories.join(", ")}. Bring different ${req.piece === "dinner" ? "cuisines" : "kinds of places"} this time.`;
+  }
+  if (req.hint) prompt += `\n\nExtra direction: ${req.hint}`;
+  return prompt;
+}
+
+/** One line per real place from Google, numbered for Claude to pick by. */
+function candidateLine(c: Candidate, i: number) {
+  const price = c.level === null ? "price unknown" : `${BUDGETS[c.level]}${c.priceText ? ` (${c.priceText})` : ""}`;
+  const parts = [
+    `[${i + 1}] ${c.name}`,
+    c.type,
+    price,
+    `${c.rating.toFixed(1)}★ from ${c.ratings.toLocaleString("en-US")} reviews`,
+    c.address.split(",")[0],
+    c.hours ? `that day: ${c.hours}` : "",
+    c.far ? "(a bit outside the area)" : "",
+  ];
+  return parts.filter(Boolean).join(" · ");
+}
+
+/**
+ * Choose among real places from Google instead of recalling them. Everything
+ * on the list is open, rated and on budget; Claude's job is taste and variety.
+ */
+export function curatePrompt(req: SectionRequest, candidates: Candidate[]) {
+  const n = Math.min(CANDIDATES, candidates.length);
+  let prompt = `Today is ${today()}.
+
+Plan the "${pieceLabel(req.piece)}" part of a night out in NYC.
+
+${tripLines(req, req.piece)}
+
+What to find: ${PIECE_GUIDANCE[req.piece]}
+
+Variety: ${varietyLine(req, req.piece, n)}
+
+Choose from these real places, which are currently open for business, near the area and within the budget. Only choose from this list, by number:
+${candidates.map(candidateLine).join("\n")}
+
+Pick the ${n} best for this night, best first. Favor places that fit the vibe and the crowd described in your instructions over the highest ratings; skip chains, tourist traps and places that don't suit this part of the night. Prefer places inside the area over ones marked "a bit outside the area".
+
+For each pick give: its number, a specific category (the cuisine or bar style, e.g. "Sichuan" or "Natural wine bar"), your own honest price level for it (Google's often runs low for NYC; skip places you know are over the budget), a one-sentence "why" under 20 words, a "tip" under 25 words, and "when" (the hours that matter tonight, from the list). Don't invent facts the list doesn't support and you aren't sure of.`;
+  const others = req.otherPieces.filter((p) => p !== req.piece);
+  if (others.length) {
+    prompt += `\n\nThe other parts of this night (${others.map(pieceLabel).join(", ")}) are being planned separately. Only pick places that clearly belong in "${pieceLabel(req.piece)}".`;
+  }
+  if (req.avoidCategories?.length) {
+    prompt += `\n\nAlready covered: ${req.avoidCategories.join(", ")}. Pick different ${req.piece === "dinner" ? "cuisines" : "kinds of places"} this time.`;
   }
   if (req.hint) prompt += `\n\nExtra direction: ${req.hint}`;
   return prompt;

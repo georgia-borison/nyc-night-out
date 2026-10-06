@@ -1,12 +1,12 @@
 import { errorResponse } from "@/lib/claude";
-import { findOptions } from "@/lib/findOptions";
+import { findSection } from "@/lib/findOptions";
 import { SuggestRequestSchema } from "@/lib/schema";
-import { choose, vetOptions } from "@/lib/vetOptions";
+import { choose } from "@/lib/vetOptions";
 
 export const maxDuration = 300;
 
 // Refreshes one part of the night ("Show different options" / "More like this").
-// Options are vetted the same way as the first search before they're returned.
+// Options come from the same source and checks as the first search.
 export async function POST(request: Request) {
   const parsed = SuggestRequestSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
@@ -14,11 +14,12 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { options: candidates, costUsd } = await findOptions(parsed.data);
-    const vetted = await vetOptions(candidates, parsed.data);
+    const { vetted, costUsd, source, candidates } = await findSection(parsed.data);
     const { options, note } = choose([vetted]);
     const dropped = vetted.dropped.map((d) => `${d.name} (${d.reason})`).join(", ");
-    console.log(`[suggest] ${parsed.data.piece}: ${candidates.length} candidates, ${options.length} kept${dropped ? `; dropped ${dropped}` : ""}`);
+    console.log(
+      `[suggest] ${parsed.data.piece}: ${candidates} candidates from ${source}, ${options.length} kept${dropped ? `; dropped ${dropped}` : ""}`,
+    );
     return Response.json({ options, note, costUsd });
   } catch (err) {
     return errorResponse(err);

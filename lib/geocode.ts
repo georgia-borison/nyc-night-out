@@ -247,11 +247,23 @@ function distinctiveWords(name: string) {
   return nameWords(name.replace(/[’‘]/g, "'")).filter((w) => w.length >= 3 && !PLACE_WORDS.has(w));
 }
 
-/** Whether a result is named for the venue, not just on a street or in a building that is. Null if the name is too generic to tell. */
+/**
+ * Whether a map result is this venue. Either the map's name covers most of
+ * ours, or ours contains all of the map's ("Awash" for "Awash Ethiopian
+ * Restaurant"). Sharing one word isn't enough: "Rubin Museum of Art" isn't
+ * "Rubin Museum Neighborhood Pop-Ups". Null if the name is too generic to tell.
+ */
 function namedFor(name: string): ((h: Hit) => boolean) | null {
-  const distinctive = distinctiveWords(name);
-  if (!distinctive.length) return null;
-  return (h: Hit) => distinctive.some((w) => h.name?.toLowerCase().includes(w));
+  const ours = distinctiveWords(name);
+  if (!ours.length) return null;
+  return (h: Hit) => {
+    if (!h.name) return false;
+    const theirs = distinctiveWords(h.name);
+    if (!theirs.length) return false;
+    const covered = ours.filter((w) => theirs.includes(w)).length;
+    if (covered >= Math.ceil((ours.length * 2) / 3)) return true;
+    return theirs.every((w) => ours.includes(w)) && theirs.some((w) => w.length >= 4);
+  };
 }
 
 export async function onMapNear(name: string, point: { lat: number; lng: number }): Promise<boolean> {
@@ -266,8 +278,7 @@ export async function onMapNear(name: string, point: { lat: number; lng: number 
   // so try the first distinctive word on its own.
   const core = distinctiveWords(full).find((w) => w.length >= 4);
   if (!core || core === full.toLowerCase()) return false;
-  const hasCore = (h: Hit) => !!h.name?.toLowerCase().includes(core);
-  return (await searchByName(core, viewbox, point, hasCore)).some(hasCore);
+  return (await searchByName(core, viewbox, point, named)).some(named);
 }
 
 /** Coordinates for each venue that can be placed (skips the rest). */

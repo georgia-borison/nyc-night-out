@@ -224,6 +224,48 @@ export const OPTIONS_JSON_SCHEMA = {
   properties: { options: { type: "array", items: OPTION_JSON_SCHEMA } },
 } as const;
 
+// Claude's choices from a list of real places (lib/places.ts), by number.
+export const PicksResultSchema = z.object({
+  options: z.array(
+    z.object({
+      number: z.number().int(),
+      category: z.string(),
+      price: z.string(),
+      why: z.string(),
+      tip: z.string(),
+      when: z.string(),
+    }),
+  ),
+});
+
+export const PICKS_JSON_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["options"],
+  properties: {
+    options: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["number", "category", "price", "why", "tip", "when"],
+        properties: {
+          number: { type: "integer", description: "The place's number in the list" },
+          category: OPTION_JSON_SCHEMA.properties.category,
+          price: {
+            type: "string",
+            description:
+              "Your own read of what it costs per person in NYC today, using the dollar ranges in the request: $, $, $$ or $$.",
+          },
+          why: OPTION_JSON_SCHEMA.properties.why,
+          tip: OPTION_JSON_SCHEMA.properties.tip,
+          when: { type: "string", description: "Hours that matter tonight, from the list. Empty string if unknown." },
+        },
+      },
+    },
+  },
+} as const;
+
 export const ITINERARY_JSON_SCHEMA = {
   type: "object",
   additionalProperties: false,

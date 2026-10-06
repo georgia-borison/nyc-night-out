@@ -26,8 +26,11 @@ const PLACE_WORDS = ["new york", "nyc", "manhattan", "brooklyn", "queens", "bron
 // A venue's own page announcing it's gone ("Bar Boulud NYC - Permanently Closed").
 const CLOSED = /\b(permanently closed|closed permanently|closed for good|permanently closing|closed its doors)\b/;
 
-/** "ok": the venue's page. "bad": not its page. "closed": its page says it has closed. */
-export type LinkStatus = "ok" | "bad" | "closed";
+/**
+ * "ok": the venue's page. "bad": not its page. "closed": its page says it has
+ * closed. "misplaced": its page gives a different address than Claude did.
+ */
+export type LinkStatus = "ok" | "bad" | "closed" | "misplaced";
 
 const cache = new Map<string, Promise<LinkStatus>>();
 
@@ -96,6 +99,25 @@ function metaText(html: string) {
 // A domain that names the city as well as the venue ("awashny.com") is local.
 const LOCAL_HOST = /(nyc|newyork|manhattan|brooklyn|queens|bronx|ny$)/;
 
+// Street addresses in normalized page text: "107 eldridge street", "212 w 20th st", "2020 broadway".
+const PAGE_ADDRESS =
+  /\b(\d{1,5})(?: \d{1,5})? (?:(?:w|e|n|s|west|east|north|south) )?(?:[a-z0-9]+ ){0,2}?(?:st|street|ave|avenue|pl|place|blvd|boulevard|rd|road|ln|lane|sq|square)\b|\b(\d{1,5}) (?:broadway|bowery)\b/g;
+
+/**
+ * Whether the page's own address agrees with Claude's. "none" when the page
+ * shows no street address (common on script-built sites) or Claude gave none.
+ */
+function addressOnPage(text: string, address: string): "match" | "mismatch" | "none" {
+  const street = address.split(",").map((s) => s.trim()).find((s) => /^\d/.test(s));
+  if (!street) return "none";
+  const number = street.match(/^\d+/)![0];
+  const key = streetWords(address)?.split(" ")[0];
+  if (!key) return "none";
+  const found = [...text.matchAll(PAGE_ADDRESS)];
+  if (!found.length) return "none";
+  return found.some((m) => (m[1] ?? m[2]) === number && m[0].includes(key)) ? "match" : "mismatch";
+}
+
 async function readText(res: Response) {
   const reader = res.body?.getReader();
   if (!reader) return "";
@@ -139,10 +161,8 @@ async function check(url: string, name: string, address: string, places: string[
     return "bad"; // DNS failure, timeout, bad TLS.
   }
 
-  // Bot protection on what is almost certainly the venue's own domain.
-  if ((res.status === 403 || res.status === 429 || res.status === 503) && namesVenue(words, (w) => compactHost.includes(w))) {
-    return "ok";
-  }
+  // A blocked or broken page proves nothing: dead domains answer 403 too
+  // (yunnankitchen.com), so the venue has to pass the map check instead.
   if (!res.ok) return "bad";
 
   const html = await readText(res);
@@ -152,6 +172,9 @@ async function check(url: string, name: string, address: string, places: string[
   const hostNames = namesVenue(words, (w) => compactHost.includes(w));
   if (!hostNames && !namesVenue(words, (w) => text.includes(w))) return "bad";
   if (CLOSED.test(text)) return "closed";
+  // The site lists its address and it isn't the one Claude gave (The Flower
+  // Shop is on Eldridge St, not in Chelsea): the place isn't where we'd send people.
+  if (addressOnPage(text, address) === "mismatch") return "misplaced";
 
   // And it must be the New York one, not a namesake elsewhere.
   const finalHost = new URL(res.url || url).hostname.replace(/^www\./, "").split(".")[0];
@@ -175,7 +198,7 @@ export function verifyVenueUrl(
   neighborhood?: string,
 ): Promise<LinkStatus> {
   if (!url) return Promise.resolve("bad");
-  const key = `${url}|${name}`;
+  const key = `${url}|${name}|${address}`;
   let hit = cache.get(key);
   if (!hit) {
     hit = check(url, name, address, placeNames(area, neighborhood)).catch((): LinkStatus => "bad");
@@ -186,14 +209,16 @@ export function verifyVenueUrl(
 
 /**
  * Checks venues' links, up to 6 at a time. Returns the names whose link isn't
- * their page (bad) and those whose own page says they've closed (closed).
+ * their page (bad), those whose own page says they've closed (closed), and
+ * those whose page gives a different address (misplaced).
  */
 export async function checkLinks(
   items: { name: string; url: string; address: string; neighborhood?: string }[],
   area: string,
-): Promise<{ bad: string[]; closed: string[] }> {
+): Promise<{ bad: string[]; closed: string[]; misplaced: string[] }> {
   const bad: string[] = [];
   const closed: string[] = [];
+  const misplaced: string[] = [];
   const queue = items.filter((i) => i.url);
   await Promise.all(
     Array.from({ length: Math.min(6, queue.length) }, async () => {
@@ -201,8 +226,9 @@ export async function checkLinks(
         const status = await verifyVenueUrl(item.url, item.name, item.address, area, item.neighborhood);
         if (status === "bad") bad.push(item.name);
         if (status === "closed") closed.push(item.name);
+        if (status === "misplaced") misplaced.push(item.name);
       }
     }),
   );
-  return { bad, closed };
+  return { bad, closed, misplaced };
 }

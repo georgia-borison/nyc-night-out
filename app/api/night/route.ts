@@ -1,7 +1,7 @@
 import { describeError } from "@/lib/claude";
-import { findOptions } from "@/lib/findOptions";
+import { findSection } from "@/lib/findOptions";
 import { NightRequestSchema, type NightEvent, type Option, type PieceId } from "@/lib/schema";
-import { SHOW, choose, vetOptions, type Vetted } from "@/lib/vetOptions";
+import { SHOW, choose, type Vetted } from "@/lib/vetOptions";
 
 export const maxDuration = 300;
 
@@ -50,8 +50,10 @@ export async function POST(request: Request) {
         send({ type: "search", query });
       };
 
-      // Too few good options: ask Claude for this part again, excluding everything seen
-      // and steering toward kinds of places not already covered.
+      const namesIn = (v: Vetted) => [...v.near, ...v.cheaper, ...v.unplaced, ...v.far].map((o) => o.name).concat(v.dropped.map((d) => d.name));
+
+      // Too few good options: look again, excluding everything seen and
+      // steering toward kinds of places not already covered.
       const topUp = async (piece: PieceId, rounds: Vetted[]) => {
         send({ type: "topup", piece });
         console.log(`[night] ${piece}: topping up at ${secs()}s`);
@@ -60,45 +62,44 @@ export async function POST(request: Request) {
         const hints = [`Only suggest places inside the area boundaries${trip.rides ? "" : ", a short walk from each other"}.`];
         if (overBudget) hints.push("Some earlier picks were over budget; stay at or under it.");
         try {
-          const extra = await findOptions(
+          const extra = await findSection(
             {
               ...trip,
               piece,
               otherPieces: pieces,
-              exclude: [...allNames].slice(0, 40),
+              exclude: [...allNames].slice(-40),
               avoidCategories: [...new Set(kept.map((o) => o.category))],
               hint: hints.join(" "),
             },
-            // Vetting catches fakes and closures, so skip the web search and keep it quick.
+            // Skip the web search and keep it quick; vetting catches fakes and closures.
             { search: false },
           );
           costUsd += extra.costUsd;
-          extra.options.forEach((o) => allNames.add(o.name));
-          rounds.push(await vetOptions(extra.options, trip));
+          namesIn(extra.vetted).forEach((n) => allNames.add(n));
+          rounds.push(extra.vetted);
         } catch (err) {
           console.error(`[night] ${piece}: top-up failed`, err);
         }
       };
 
       const runPiece = async (piece: PieceId) => {
-        let candidates: Option[] = [];
+        const rounds: Vetted[] = [];
         let failure: unknown = null;
         try {
-          const found = await findOptions({ ...trip, piece, otherPieces: pieces, exclude: [] }, { onSearch });
+          const found = await findSection({ ...trip, piece, otherPieces: pieces, exclude: [] }, { onSearch });
           costUsd += found.costUsd;
-          candidates = found.options;
+          rounds.push(found.vetted);
+          namesIn(found.vetted).forEach((n) => allNames.add(n));
+          console.log(`[night] ${piece}: ${found.candidates} candidates from ${found.source} at ${secs()}s`);
         } catch (err) {
           failure = err;
           console.error(`[night] ${piece}: search failed at ${secs()}s`, err);
         }
-        candidates.forEach((o) => allNames.add(o.name));
-        console.log(`[night] ${piece}: ${candidates.length} candidates from Claude at ${secs()}s`);
 
-        const rounds = [await vetOptions(candidates, trip)];
         let pick = choose(rounds, shownElsewhere(piece));
-        const dropped = rounds[0].dropped.map((d) => `${d.name} (${d.reason})`).join(", ");
+        const dropped = rounds.flatMap((r) => r.dropped).map((d) => `${d.name} (${d.reason})`).join(", ");
         console.log(
-          `[night] ${piece}: ${pick.options.length} kept at ${secs()}s [${pick.options.map((o) => `${o.category} ${o.price}`).join("; ")}]${dropped ? `; dropped ${dropped}` : ""}`,
+          `[night] ${piece}: ${pick.options.length} kept at ${secs()}s [${pick.options.map((o) => `${o.name}: ${o.category} ${o.price}`).join("; ")}]${dropped ? `; dropped ${dropped}` : ""}`,
         );
         // If the search itself failed for a reason a retry won't fix (no credits, bad key), don't top up.
         const status = failure === null ? null : describeError(failure).status;
