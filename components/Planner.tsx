@@ -9,6 +9,8 @@ import { ACTIVITY_TYPES, BAR_TYPES, CUISINES } from "@/lib/cuisines";
 import {
   BUDGETS,
   PIECES,
+  budgetLabel,
+  budgetLevels,
   type Budget,
   type Itinerary,
   type NightEvent,
@@ -77,6 +79,8 @@ export function Planner() {
   const [time, setTime] = useState("19:00");
   const [partySize, setPartySize] = useState(2);
   const [budget, setBudget] = useState<Budget>("$$");
+  // The high end when a range is picked; unset means exactly one level.
+  const [budgetTo, setBudgetTo] = useState<Budget | undefined>();
   const [pieces, setPieces] = useState<PieceId[]>(["pre_drinks", "dinner", "post_drinks"]);
   const [cuisines, setCuisines] = useState<string[]>([]);
   const [barTypes, setBarTypes] = useState<string[]>([]);
@@ -111,7 +115,19 @@ export function Planner() {
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  const trip: Trip = { area, vibe, date, time, partySize, budget, cuisines, barTypes, activityTypes, rides };
+  const trip: Trip = { area, vibe, date, time, partySize, budget, budgetTo, cuisines, barTypes, activityTypes, rides };
+
+  // One tap picks a level. A second, different level makes a range; any tap on a range starts over.
+  function pickBudget(b: Budget) {
+    if (budgetTo === undefined && b !== budget) {
+      const [low, high] = [budget, b].sort((x, y) => BUDGETS.indexOf(x) - BUDGETS.indexOf(y));
+      setBudget(low);
+      setBudgetTo(high);
+    } else {
+      setBudget(b);
+      setBudgetTo(undefined);
+    }
+  }
 
   function toggleRides(next: boolean) {
     setRides(next);
@@ -172,7 +188,9 @@ export function Planner() {
         piece,
         otherPieces: pieces,
         // Skip anything already seen here or shown in another section.
-        exclude: Array.from(new Set([...seen, ...shownElsewhere(piece)])),
+        exclude: Array.from(new Set([...seen, ...shownElsewhere(piece)])).slice(-40),
+        // "Show different options" should bring new kinds of places, not just new names.
+        avoidCategories: hint ? [] : Array.from(new Set((prev?.options ?? []).map((o) => o.category))).slice(0, 20),
         hint,
       });
       setSpent((c) => c + data.costUsd);
@@ -360,7 +378,7 @@ export function Planner() {
   const pickCount = orderedPieces.filter((p) => picks[p.id]).length;
   const anyLoading = orderedPieces.some((p) => results[p.id]?.status === "loading" || results[p.id]?.toppingUp);
   const phrases = useMemo(
-    () => searchPhrases({ area, budget, pieces, rides }),
+    () => searchPhrases({ area, budget: budgetLabel({ budget, budgetTo }), pieces, rides }),
     // A fresh shuffle for each search.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [waitStarted],
@@ -503,10 +521,17 @@ export function Planner() {
             </Field>
           </div>
 
-          <Section title="Budget" hint="Per person, roughly.">
+          <Section
+            title="Budget"
+            hint={
+              budgetTo
+                ? `Per person, anywhere from ${budget} to ${budgetTo}. Tap one to pick just that level.`
+                : `Per person. Tap a second one for a range.`
+            }
+          >
             <ChipRow label="Budget">
               {BUDGETS.map((b) => (
-                <Chip key={b} selected={budget === b} onClick={() => setBudget(b)}>
+                <Chip key={b} selected={budgetLevels({ budget, budgetTo }).includes(b)} onClick={() => pickBudget(b)}>
                   <span className="px-1 tracking-widest">{b}</span>
                 </Chip>
               ))}
@@ -574,10 +599,10 @@ export function Planner() {
         <div className="space-y-10">
           <Heading
             title={`Your night in ${area}`}
-            sub="Tap one option for each part of the night. We check that every spot is real, open and close by, so it takes a minute or two."
+            sub="Tap one option for each part of the night. We check that every spot is real, open, close by and on budget."
           />
           {anyLoading && (
-            <LoadingShow phrases={phrases} flash={flash} startedAt={waitStarted} expected="Usually 1–2 minutes" />
+            <LoadingShow phrases={phrases} flash={flash} startedAt={waitStarted} expected="Usually under a minute" />
           )}
           {orderedPieces.map((p) => {
             const r = results[p.id];

@@ -79,6 +79,10 @@ export async function askClaude<T>(opts: {
   submitDescription: string;
   webSearch: boolean;
   maxSearches?: number;
+  /** Skip thinking for a faster answer (default: think briefly). */
+  think?: boolean;
+  /** Give up after this long, across all turns. */
+  timeoutMs?: number;
   onSearch?: (query: string) => void;
   onPartial?: (input: unknown) => void;
   /** Content check beyond the schema; return a problem to send back to Claude, or null if it's fine. */
@@ -99,7 +103,9 @@ export async function askClaude<T>(opts: {
   ];
   if (opts.webSearch) {
     tools.push({
-      type: "web_search_20260209",
+      // The basic search tool. The newer one runs searches from generated code,
+      // which is slower and, once out of searches, could loop (even sleeping) for minutes.
+      type: "web_search_20250305",
       name: "web_search",
       max_uses: opts.maxSearches ?? 2,
       user_location: {
@@ -115,6 +121,7 @@ export async function askClaude<T>(opts: {
   const messages: BetaMessageParam[] = [{ role: "user", content: opts.prompt }];
   let costUsd = 0;
   let searches = 0;
+  const signal = opts.timeoutMs ? AbortSignal.timeout(opts.timeoutMs) : undefined;
 
   for (let turn = 0; turn < MAX_TURNS; turn++) {
     let message;
@@ -122,13 +129,13 @@ export async function askClaude<T>(opts: {
       const stream = anthropic.beta.messages.stream({
         model: MODEL,
         max_tokens: 16000,
-        thinking: { type: "adaptive" },
+        thinking: opts.think === false ? { type: "disabled" } : { type: "adaptive" },
         // Low effort keeps thinking short and tool calls few, which is most of the cost.
         output_config: { effort: "low" },
         system: SYSTEM_PROMPT,
         tools,
         messages,
-      });
+      }, { signal });
       const { onSearch, onPartial } = opts;
       if (onSearch) {
         stream.on("contentBlock", (block) => {
@@ -157,6 +164,7 @@ export async function askClaude<T>(opts: {
       }
       message = await stream.finalMessage();
     } catch (err) {
+      if (signal?.aborted) throw new PlannerError("Claude took too long to finish. Please try again.", 504);
       console.error("[claude]", err);
       throw toPlannerError(err);
     }

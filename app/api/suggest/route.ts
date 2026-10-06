@@ -1,6 +1,6 @@
-import { askClaude, errorResponse } from "@/lib/claude";
-import { suggestPrompt } from "@/lib/prompt";
-import { OPTIONS_JSON_SCHEMA, OptionsResultSchema, SuggestRequestSchema, cleanOptions } from "@/lib/schema";
+import { errorResponse } from "@/lib/claude";
+import { findOptions } from "@/lib/findOptions";
+import { SuggestRequestSchema } from "@/lib/schema";
 import { choose, vetOptions } from "@/lib/vetOptions";
 
 export const maxDuration = 300;
@@ -14,16 +14,8 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { data, costUsd } = await askClaude({
-      prompt: suggestPrompt(parsed.data),
-      schema: OptionsResultSchema,
-      jsonSchema: OPTIONS_JSON_SCHEMA,
-      submitDescription: "Submit the final list of options for this part of the night.",
-      webSearch: true,
-      // Refreshes lean on what Claude knows; one search to catch anything new.
-      maxSearches: 1,
-    });
-    const vetted = await vetOptions(cleanOptions(data.options), parsed.data.area, parsed.data.rides);
+    const { options: candidates, costUsd } = await findOptions(parsed.data);
+    const vetted = await vetOptions(candidates, parsed.data);
     const { options, note } = choose([vetted]);
     return Response.json({ options, note, costUsd });
   } catch (err) {

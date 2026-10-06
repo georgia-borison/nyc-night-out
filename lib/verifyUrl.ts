@@ -67,6 +67,35 @@ function streetWords(address: string) {
   return words.length ? words.join(" ") : null;
 }
 
+const ENTITIES: Record<string, string> = {
+  amp: "&", apos: "'", quot: '"', rsquo: "'", lsquo: "'", nbsp: " ", ndash: "-", mdash: "-", eacute: "é", egrave: "è",
+};
+
+/** "The Owl&#39;s Tail" -> "The Owl's Tail", so names with apostrophes or accents match. */
+function decodeEntities(s: string) {
+  return s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, code: string) => {
+    if (code[0] === "#") {
+      const n = code[1] === "x" || code[1] === "X" ? parseInt(code.slice(2), 16) : Number(code.slice(1));
+      return Number.isFinite(n) && n > 0 && n < 0x110000 ? String.fromCodePoint(n) : " ";
+    }
+    return ENTITIES[code.toLowerCase()] ?? " ";
+  });
+}
+
+// Meta tags that name the venue even on pages whose body is built by scripts.
+const META_NAMES = /^(og:title|og:site_name|og:description|description|twitter:title|twitter:description)$/i;
+
+function metaText(html: string) {
+  return (html.match(/<meta\b[^>]*>/gi) ?? [])
+    .filter((tag) => META_NAMES.test(tag.match(/\b(?:name|property)\s*=\s*["']([^"']+)["']/i)?.[1] ?? ""))
+    .map((tag) => tag.match(/\bcontent\s*=\s*"([^"]*)"|\bcontent\s*=\s*'([^']*)'/i))
+    .map((m) => m?.[1] ?? m?.[2] ?? "")
+    .join(" ");
+}
+
+// A domain that names the city as well as the venue ("awashny.com") is local.
+const LOCAL_HOST = /(nyc|newyork|manhattan|brooklyn|queens|bronx|ny$)/;
+
 async function readText(res: Response) {
   const reader = res.body?.getReader();
   if (!reader) return "";
@@ -117,12 +146,16 @@ async function check(url: string, name: string, address: string, places: string[
   if (!res.ok) return "bad";
 
   const html = await readText(res);
-  const text = normalize(
-    html.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " "),
-  );
-  if (!namesVenue(words, (w) => text.includes(w))) return "bad";
+  const body = html.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ");
+  const text = normalize(decodeEntities(`${metaText(html)} ${body}`));
+  // The site's own domain naming the venue counts too (script-built pages can be nearly empty).
+  const hostNames = namesVenue(words, (w) => compactHost.includes(w));
+  if (!hostNames && !namesVenue(words, (w) => text.includes(w))) return "bad";
   if (CLOSED.test(text)) return "closed";
 
+  // And it must be the New York one, not a namesake elsewhere.
+  const finalHost = new URL(res.url || url).hostname.replace(/^www\./, "").split(".")[0];
+  if (hostNames && LOCAL_HOST.test(finalHost)) return "ok";
   const where = [...PLACE_WORDS, streetWords(address), ...places.map(normalize).filter((p) => p.length > 3)];
   return where.some((p) => p && text.includes(p)) ? "ok" : "bad";
 }

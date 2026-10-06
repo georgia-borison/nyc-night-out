@@ -19,13 +19,38 @@ export function pieceLabel(id: PieceId) {
 export const BUDGETS = ["$", "$$", "$$$", "$$$$"] as const;
 export type Budget = (typeof BUDGETS)[number];
 
+/** The budget levels a trip allows: one level, or every level in a range. */
+export function budgetLevels(trip: { budget: Budget; budgetTo?: Budget }): Budget[] {
+  const a = BUDGETS.indexOf(trip.budget);
+  const b = trip.budgetTo ? BUDGETS.indexOf(trip.budgetTo) : a;
+  return BUDGETS.slice(Math.min(a, b), Math.max(a, b) + 1);
+}
+
+/** "$$", or "$$–$$$" for a range. */
+export function budgetLabel(trip: { budget: Budget; budgetTo?: Budget }) {
+  const levels = budgetLevels(trip);
+  return levels.length > 1 ? `${levels[0]}–${levels[levels.length - 1]}` : levels[0];
+}
+
+/** An option's price as a budget level index (0-3), or null if it can't be read. "Free" counts as $. */
+export function priceLevel(price: string): number | null {
+  const p = price.trim();
+  if (/^free\b/i.test(p)) return 0;
+  // Ranges like "$$-$$$" count by their top end.
+  const runs = p.match(/\${1,4}/g);
+  if (!runs) return null;
+  return Math.max(...runs.map((r) => r.length)) - 1;
+}
+
 export const TripSchema = z.object({
   area: z.string().min(1).max(120),
   vibe: z.string().max(1000).default(""),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   time: z.string().regex(/^\d{2}:\d{2}$/),
   partySize: z.number().int().min(1).max(30),
+  // The low end of the budget; budgetTo is the high end when a range was picked.
   budget: z.enum(BUDGETS),
+  budgetTo: z.enum(BUDGETS).optional(),
   cuisines: z.array(z.string().max(60)).max(20).default([]),
   barTypes: z.array(z.string().max(60)).max(20).default([]),
   activityTypes: z.array(z.string().max(60)).max(20).default([]),
@@ -38,6 +63,8 @@ export const SuggestRequestSchema = TripSchema.extend({
   piece: z.enum(PIECE_IDS),
   otherPieces: z.array(z.enum(PIECE_IDS)).max(PIECES.length).default([]),
   exclude: z.array(z.string().max(120)).max(40).default([]),
+  // Cuisines or styles already showing, so a refresh brings different kinds of places.
+  avoidCategories: z.array(z.string().max(80)).max(20).default([]),
   hint: z.string().max(300).optional(),
 });
 export type SuggestRequest = z.infer<typeof SuggestRequestSchema>;
@@ -66,9 +93,12 @@ export const OptionsResultSchema = z.object({
 // ("Let me check whether..."). Drop any option whose name reads like prose.
 const PROSE_OPENER = /^(let me|let's|i'll|i will|i need|i should|i'm|i am|searching|based on|looking|now,? |okay|ok,? |hmm|note:)/i;
 
+// Or hedges between places: "I Sodi Bar / Via Carota area aperitivo - 'Bar Pisellino'".
+const HEDGE = /\s\/\s|\barea\b|["“”]|\s'[^']+'/i;
+
 export function looksLikeVenueName(name: string) {
   const n = name.trim();
-  return n.length > 0 && n.length <= 60 && !/[\r\n]/.test(n) && !PROSE_OPENER.test(n);
+  return n.length > 0 && n.length <= 60 && !/[\r\n]/.test(n) && !PROSE_OPENER.test(n) && !HEDGE.test(n);
 }
 
 export function cleanOptions(options: Option[]) {
@@ -79,15 +109,9 @@ export function cleanOptions(options: Option[]) {
   });
 }
 
-// The first search: every selected part of the night in one call.
+// The first search: every selected part of the night, each searched at the same time.
 export const NightRequestSchema = TripSchema.extend({
   pieces: z.array(z.enum(PIECE_IDS)).min(1).max(PIECES.length),
-});
-
-export const SectionSchema = z.object({ piece: z.enum(PIECE_IDS), options: z.array(OptionSchema) });
-
-export const NightResultSchema = z.object({
-  sections: z.array(SectionSchema),
 });
 
 // Lines streamed back by /api/night, one JSON object per line.
@@ -178,7 +202,11 @@ const OPTION_JSON_SCHEMA = {
     },
     neighborhood: str,
     address: ADDRESS,
-    price: { type: "string", description: "One of $, $$, $$$, $$$$, or 'Free'" },
+    price: {
+      type: "string",
+      description:
+        "One of $, $$, $$$, $$$$, or 'Free': what it really costs per person in NYC today, using the dollar ranges in the request.",
+    },
     why: { type: "string", description: "Why it fits this night: one sentence, under 20 words" },
     tip: { type: "string", description: "Practical tip (reservations, what to order, arrive-by, cover), under 25 words" },
     when: {
@@ -194,26 +222,6 @@ export const OPTIONS_JSON_SCHEMA = {
   additionalProperties: false,
   required: ["options"],
   properties: { options: { type: "array", items: OPTION_JSON_SCHEMA } },
-} as const;
-
-export const NIGHT_JSON_SCHEMA = {
-  type: "object",
-  additionalProperties: false,
-  required: ["sections"],
-  properties: {
-    sections: {
-      type: "array",
-      items: {
-        type: "object",
-        additionalProperties: false,
-        required: ["piece", "options"],
-        properties: {
-          piece: { type: "string", enum: PIECE_IDS },
-          options: { type: "array", items: OPTION_JSON_SCHEMA },
-        },
-      },
-    },
-  },
 } as const;
 
 export const ITINERARY_JSON_SCHEMA = {

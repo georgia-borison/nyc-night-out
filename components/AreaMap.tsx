@@ -33,6 +33,8 @@ function KeepSizeInSync({ onShown }: { onShown: () => void }) {
     const el = map.getContainer();
     let hadSize = false;
     const check = () => {
+      // The observer can fire once more while the map is being torn down (leaving the page).
+      if (!el.isConnected || !map.getPane("mapPane")) return;
       map.invalidateSize({ pan: false });
       const hasSize = el.clientWidth > 0 && el.clientHeight > 0;
       if (hasSize && !hadSize) onShown();

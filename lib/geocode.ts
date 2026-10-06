@@ -71,15 +71,83 @@ function km(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
 // lookups run at once (e.g. background checks while Claude is still writing).
 let queue: Promise<unknown> = Promise.resolve();
 let lastRequest = 0;
+// Requests waiting their turn; each one ahead adds about a second.
+let waiting = 0;
 function nominatim(params: Record<string, string>): Promise<Hit[]> {
+  waiting++;
   const run = queue.then(async () => {
     const wait = lastRequest + 1100 - Date.now();
     if (wait > 0) await new Promise((r) => setTimeout(r, wait));
     lastRequest = Date.now();
+    waiting--;
     return request(params);
   });
   queue = run.catch(() => {});
   return run;
+}
+
+// A second free OpenStreetMap search with no one-per-second rule. It's slower
+// per request (about 4-6 s), so it's only used when Nominatim's queue is long.
+const PHOTON = "https://photon.komoot.io/api/";
+const BUSY_QUEUE = 4;
+const PHOTON_LIMIT = 6;
+let photonActive = 0;
+const photonWaiters: (() => void)[] = [];
+
+// Photon's "type" for results that cover an area or a street, not a single place.
+const PHOTON_AREA: Record<string, string> = {
+  street: "road", locality: "suburb", district: "suburb", city: "city", county: "county", state: "state", country: "country",
+};
+
+async function photon(q: string, near: { lat: number; lng: number } | null, box: string): Promise<Hit[] | null> {
+  if (photonActive >= PHOTON_LIMIT) await new Promise<void>((r) => photonWaiters.push(r));
+  photonActive++;
+  try {
+    const url = new URL(PHOTON);
+    url.search = new URLSearchParams({
+      q,
+      limit: "5",
+      lang: "en",
+      bbox: box,
+      ...(near ? { lat: String(near.lat), lon: String(near.lng) } : {}),
+    }).toString();
+    const res = await fetch(url, { headers: { "User-Agent": USER_AGENT }, signal: AbortSignal.timeout(8000) });
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      features: { geometry: { coordinates: [number, number] }; properties: { name?: string; type?: string } }[];
+    };
+    return data.features.map((f) => ({
+      lng: f.geometry.coordinates[0],
+      lat: f.geometry.coordinates[1],
+      name: f.properties.name,
+      addresstype: PHOTON_AREA[f.properties.type ?? ""],
+    }));
+  } catch {
+    return null;
+  } finally {
+    photonActive--;
+    photonWaiters.shift()?.();
+  }
+}
+
+/**
+ * Search for a place by name inside a box ("minLng,maxLat,maxLng,minLat",
+ * Nominatim's order), from whichever geocoder will answer sooner.
+ */
+async function searchByName(
+  q: string,
+  box: string,
+  near: { lat: number; lng: number } | null,
+  /** Photon matches loosely, so its results must pass this name check. */
+  named: (h: Hit) => boolean,
+  photonQuery = q,
+): Promise<Hit[]> {
+  if (waiting >= BUSY_QUEUE) {
+    const [w, n, e, s] = box.split(",");
+    const hits = await photon(photonQuery, near, [w, s, e, n].join(","));
+    if (hits) return hits.filter(named);
+  }
+  return nominatim({ q, viewbox: box, bounded: "1" });
 }
 
 async function request(params: Record<string, string>): Promise<Hit[]> {
@@ -153,7 +221,8 @@ async function locate(stop: { name: string; address: string }, center: Center, a
     const hit = pick(await nominatim(structured), center, where) ?? pick(await nominatim({ q: `${street}, ${city}, New York` }), center, where);
     if (hit) return hit;
   }
-  return pick(await nominatim({ q: `${stop.name}, ${city}, New York` }), center, where);
+  const named = namedFor(stop.name) ?? (() => false);
+  return pick(await searchByName(`${stop.name}, ${city}, New York`, NYC_VIEWBOX, center, named, stop.name), center, where);
 }
 
 /** Coordinates for one venue near the night's area, or null if it can't be placed precisely. */
@@ -173,22 +242,32 @@ const PLACE_WORDS = new Set([
  * Whether OpenStreetMap has a place with this name within ~400 m of a point.
  * The map is incomplete, so "no" is only meaningful alongside other signals.
  */
+/** Words that identify the venue itself, not a place ("Manhattan" Cricket Club). */
+function distinctiveWords(name: string) {
+  return nameWords(name.replace(/[’‘]/g, "'")).filter((w) => w.length >= 3 && !PLACE_WORDS.has(w));
+}
+
+/** Whether a result is named for the venue, not just on a street or in a building that is. Null if the name is too generic to tell. */
+function namedFor(name: string): ((h: Hit) => boolean) | null {
+  const distinctive = distinctiveWords(name);
+  if (!distinctive.length) return null;
+  return (h: Hit) => distinctive.some((w) => h.name?.toLowerCase().includes(w));
+}
+
 export async function onMapNear(name: string, point: { lat: number; lng: number }): Promise<boolean> {
   const d = 0.004; // ~400 m
   const viewbox = [point.lng - d, point.lat + d, point.lng + d, point.lat - d].join(",");
   const full = name.replace(/[’‘]/g, "'");
-  // Words that identify the venue itself, not a place ("Manhattan" Cricket Club).
-  const distinctive = nameWords(full).filter((w) => w.length >= 3 && !PLACE_WORDS.has(w));
-  if (!distinctive.length) return false;
-  // A match must be named for the venue, not just on a street or in a building that is.
-  const named = (h: Hit) => distinctive.some((w) => h.name?.toLowerCase().includes(w));
+  const named = namedFor(full);
+  if (!named) return false;
 
-  if ((await nominatim({ q: full, viewbox, bounded: "1" })).some(named)) return true;
+  if ((await searchByName(full, viewbox, point, named)).some(named)) return true;
   // The map often has a shorter name ("Awash" for "Awash Ethiopian Restaurant"),
   // so try the first distinctive word on its own.
-  const core = distinctive.find((w) => w.length >= 4);
+  const core = distinctiveWords(full).find((w) => w.length >= 4);
   if (!core || core === full.toLowerCase()) return false;
-  return (await nominatim({ q: core, viewbox, bounded: "1" })).some((h) => h.name?.toLowerCase().includes(core));
+  const hasCore = (h: Hit) => !!h.name?.toLowerCase().includes(core);
+  return (await searchByName(core, viewbox, point, hasCore)).some(hasCore);
 }
 
 /** Coordinates for each venue that can be placed (skips the rest). */

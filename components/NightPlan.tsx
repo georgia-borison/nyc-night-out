@@ -2,7 +2,7 @@
 
 import { useMemo, useState, type CSSProperties } from "react";
 import dynamic from "next/dynamic";
-import type { Itinerary, ItineraryStop, Trip } from "@/lib/schema";
+import { budgetLabel, type Itinerary, type ItineraryStop, type Trip } from "@/lib/schema";
 import { KIND_STYLE, mapsRouteUrl, mapsSearchUrl, pieceKind, searchUrl, transitIcon } from "@/lib/planStyle";
 import type { MapStop } from "./PlanMap";
 
@@ -49,7 +49,7 @@ export function NightPlan({ itinerary, trip }: { itinerary: Itinerary; trip: Tri
   const facts = [
     trip.area,
     `${trip.partySize} ${trip.partySize === 1 ? "person" : "people"}`,
-    trip.budget,
+    budgetLabel(trip),
     // Plans saved before the rides setting existed don't say either way.
     trip.rides === true ? "🚕 Short rides OK" : trip.rides === false ? "🚶 Walkable night" : null,
     stops.length > 1 ? `${stops[0].time} → ${stops[stops.length - 1].time}` : stops[0]?.time,

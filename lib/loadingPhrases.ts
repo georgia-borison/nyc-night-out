@@ -1,4 +1,4 @@
-import type { Budget, PieceId } from "./schema";
+import type { PieceId } from "./schema";
 
 // Lines for the loading card. Picked to fit what someone asked for, then
 // shuffled so repeat visits don't feel canned.
@@ -14,7 +14,8 @@ function shuffle<T>(list: T[]) {
 
 const place = (area: string) => area.split("/")[0].trim();
 
-export function searchPhrases(opts: { area: string; budget: Budget; pieces: PieceId[]; rides: boolean }) {
+/** budget is the label shown to people, e.g. "$$" or "$$–$$$". */
+export function searchPhrases(opts: { area: string; budget: string; pieces: PieceId[]; rides: boolean }) {
   const { budget, pieces, rides } = opts;
   const area = place(opts.area);
   const has = (...ids: PieceId[]) => ids.some((id) => pieces.includes(id));
