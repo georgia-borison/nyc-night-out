@@ -163,3 +163,20 @@ input[type="time"]::-webkit-calendar-picker-indicator {
 .leaflet-tooltip.area-tip::before {
   display: none;
 }
+
+/* Area map: show that it can be dragged. */
+.area-map.leaflet-grab {
+  cursor: grab;
+}
+.area-map.leaflet-dragging .leaflet-grab,
+.area-map.leaflet-dragging .leaflet-interactive {
+  cursor: grabbing;
+}
+/* Let the browser scroll the page on a one-finger swipe over the area map;
+   two-finger pinches still go to the map (see TouchFriendlyDragging). */
+/* Four classes, to outrank Leaflet's own three-class rule (its stylesheet loads later). */
+.area-map.leaflet-container,
+.area-map.leaflet-container.leaflet-touch-drag,
+.area-map.leaflet-container.leaflet-touch-drag.leaflet-touch-zoom {
+  touch-action: pan-x pan-y;
+}

@@ -87,6 +87,8 @@ export function Planner() {
   const locating = useRef(new Map<string, Promise<{ lat: number; lng: number } | null>>());
   // Escape on the area map hands focus back to the list (the selected chip, else the first).
   const areaListRef = useRef<HTMLDivElement>(null);
+  // The area under the pointer (on the map or the list), so both light up together.
+  const [hoveredArea, setHoveredArea] = useState<string | null>(null);
   const focusAreaList = () => {
     const list = areaListRef.current;
     (list?.querySelector<HTMLButtonElement>('button[aria-pressed="true"]') ?? list?.querySelector("button"))?.focus();
@@ -405,7 +407,14 @@ export function Planner() {
               aria-label="Neighborhood map (optional; the same choices are in the list below)"
               className="h-[260px] overflow-hidden rounded-2xl border border-line sm:h-[360px]"
             >
-              <AreaMap selected={area} rides={rides} onSelect={setArea} onEscape={focusAreaList} />
+              <AreaMap
+                selected={area}
+                hovered={hoveredArea}
+                rides={rides}
+                onSelect={setArea}
+                onHover={setHoveredArea}
+                onEscape={focusAreaList}
+              />
             </div>
             <figcaption className="text-xs text-muted">
               Tap a neighborhood on the map, or choose from the list.
@@ -416,7 +425,13 @@ export function Planner() {
               <Section key={b.borough} title={b.borough}>
                 <ChipRow label={`${b.borough} neighborhoods`}>
                   {b.areas.map((a) => (
-                    <Chip key={a.name} selected={area === a.name} onClick={() => setArea(a.name)}>
+                    <Chip
+                      key={a.name}
+                      selected={area === a.name}
+                      onClick={() => setArea(a.name)}
+                      highlighted={hoveredArea === a.name}
+                      onHoverChange={(on) => setHoveredArea((h) => (on ? a.name : h === a.name ? null : h))}
+                    >
                       {a.name}
                     </Chip>
                   ))}

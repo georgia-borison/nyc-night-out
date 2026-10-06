@@ -1,5 +1,3 @@
-import areaNtas from "./areaNtas.json";
-
 export type Borough ="Manhattan" | "Brooklyn" | "Queens" | "Bronx" | "Staten Island";
 
 export type Area = {
@@ -33,7 +31,7 @@ export const NEIGHBORHOODS: { borough: Borough; areas: Area[] }[] = [
       a("Flatiron / NoMad", 40.7431, -73.9897, "14th to 30th St, 6th Ave to Park Ave"),
       a("Gramercy / Union Square", 40.7368, -73.987, "14th to 23rd St, Park Ave to 1st Ave"),
       a("Midtown", 40.7549, -73.984, "30s to 50s, river to river", [
-        a("Hell's Kitchen", 40.7638, -73.9918, "W 40s to 50s, 8th Ave to the Hudson"),
+        a("Hell's Kitchen / Midtown West", 40.7615, -73.9895, "W 40s to 50s, 6th Ave to the Hudson"),
         a("Midtown East / Murray Hill", 40.749, -73.978, "E 30s to 50s, 5th Ave to the East River"),
       ]),
       a("Upper West Side", 40.787, -73.9754, "W 59th to 110th St, Central Park West to Riverside Dr", [
@@ -86,7 +84,10 @@ export const NEIGHBORHOODS: { borough: Borough; areas: Area[] }[] = [
 ];
 
 // Names used by plans saved before the areas were reorganized.
-const OLD_NAMES: Record<string, string> = { "Midtown / Hell's Kitchen": "Midtown" };
+const OLD_NAMES: Record<string, string> = {
+  "Midtown / Hell's Kitchen": "Midtown",
+  "Hell's Kitchen": "Hell's Kitchen / Midtown West",
+};
 
 /** The area chips to show: sprawling areas whole when rides are OK, otherwise their walkable parts. */
 export function visibleAreas(rides: boolean) {
@@ -115,22 +116,4 @@ export function areaInfo(name: string): AreaInfo | null {
 
 export function isListedArea(name: string) {
   return areaInfo(name) !== null;
-}
-
-// Official NYC neighborhood boundaries (NTAs) behind each area, for the map.
-const NTAS = areaNtas as unknown as Record<string, string[]>;
-
-/** NTA names that make up an area: its own, or all of its pieces' for a big area. */
-export function ntasForArea(name: string): string[] {
-  const info = areaInfo(name);
-  if (info?.parts) return info.parts.flatMap((p) => NTAS[p] ?? []);
-  return NTAS[name] ?? [];
-}
-
-/** The area to select when a map shape is tapped: the piece, or its whole neighborhood when rides are on. */
-export function areaForNta(nta: string, rides: boolean): string | null {
-  const leaf = Object.keys(NTAS).find((k) => !k.startsWith("_") && NTAS[k].includes(nta));
-  if (!leaf) return null;
-  const parent = areaInfo(leaf)?.parent;
-  return rides && parent ? parent : leaf;
 }

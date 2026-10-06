@@ -7,20 +7,32 @@ export function Chip({
   selected,
   onClick,
   children,
+  highlighted = false,
+  onHoverChange,
 }: {
   selected: boolean;
   onClick: () => void;
   children: ReactNode;
+  /** Lit up because its shape is hovered on the map. */
+  highlighted?: boolean;
+  /** Reports hover and keyboard focus, so the map can light up the matching shape. */
+  onHoverChange?: (hovering: boolean) => void;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       aria-pressed={selected}
-      className={`rounded-full border px-3.5 py-1.5 text-sm transition-colors ${
+      onMouseEnter={onHoverChange && (() => onHoverChange(true))}
+      onMouseLeave={onHoverChange && (() => onHoverChange(false))}
+      onFocus={onHoverChange && (() => onHoverChange(true))}
+      onBlur={onHoverChange && (() => onHoverChange(false))}
+      className={`rounded-full border px-3.5 py-1.5 text-sm transition ${
         selected
           ? "border-accent bg-accent text-accent-ink font-medium"
-          : "border-line bg-surface text-fg hover:border-muted"
+          : highlighted
+            ? "-translate-y-0.5 border-accent bg-accent-soft text-fg shadow-[0_4px_14px_rgba(255,138,91,0.25)]"
+            : "border-line bg-surface text-fg hover:border-muted"
       }`}
     >
       {children}
