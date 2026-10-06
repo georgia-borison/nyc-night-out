@@ -17,6 +17,8 @@ export async function POST(request: Request) {
     const { options: candidates, costUsd } = await findOptions(parsed.data);
     const vetted = await vetOptions(candidates, parsed.data);
     const { options, note } = choose([vetted]);
+    const dropped = vetted.dropped.map((d) => `${d.name} (${d.reason})`).join(", ");
+    console.log(`[suggest] ${parsed.data.piece}: ${candidates.length} candidates, ${options.length} kept${dropped ? `; dropped ${dropped}` : ""}`);
     return Response.json({ options, note, costUsd });
   } catch (err) {
     return errorResponse(err);

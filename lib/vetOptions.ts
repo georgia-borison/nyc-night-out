@@ -14,6 +14,8 @@ export type Vetted = {
   near: Option[];
   /** Real, open and close enough, but cheaper than the budget. Used before far ones. */
   cheaper: Option[];
+  /** Real and open, but the map couldn't place them, so they may not be close. */
+  unplaced: Option[];
   /** Real and open but outside the walking radius, closest first. Used only as a last resort. */
   far: Option[];
   /** Names that were ruled out, and why (for logs and to exclude from top-ups). */
@@ -48,7 +50,7 @@ function sameKind(a: Option, b: Option) {
 
 /**
  * The options to show for a section. Order of preference: nearby and on
- * budget, then nearby but cheaper, then (only if there still aren't enough)
+ * budget, then nearby but cheaper, then ones the map couldn't place, then (only if there still aren't enough)
  * the closest far ones. At each step, a kind of place that isn't showing yet
  * (a new cuisine or bar style) wins over another of the same kind.
  */
@@ -64,6 +66,7 @@ export function choose(rounds: Vetted[], shownElsewhere: Set<string> = new Set()
     });
   const near = unique(rounds.flatMap((r) => r.near));
   const cheaper = unique(rounds.flatMap((r) => r.cheaper));
+  const unplaced = unique(rounds.flatMap((r) => r.unplaced ?? []));
   const far = unique(rounds.flatMap((r) => r.far));
 
   const picked: Option[] = [];
@@ -79,11 +82,13 @@ export function choose(rounds: Vetted[], shownElsewhere: Set<string> = new Set()
   take(cheaper, true);
   take(near, false);
   take(cheaper, false);
+  take(unplaced, true);
+  take(unplaced, false);
   const closeCount = picked.length;
   take(far, true);
   take(far, false);
   // Keep the closest first.
-  const order = [...near, ...cheaper, ...far];
+  const order = [...near, ...cheaper, ...unplaced, ...far];
   picked.sort((a, b) => order.indexOf(a) - order.indexOf(b));
   return { options: picked, note: picked.length > closeCount ? NOT_MUCH_NEARBY : undefined };
 }
@@ -148,12 +153,13 @@ export async function vetOptions(options: Option[], trip: VetTrip): Promise<Vett
   const limit = rides ? RIDE_RADIUS_MI : WALK_RADIUS_MI;
   const byDistance = (a: { miles: number | null }, b: { miles: number | null }) =>
     (a.miles ?? Infinity) - (b.miles ?? Infinity);
-  const close = real.filter((r) => r.miles === null || r.miles <= limit).sort(byDistance);
+  const close = real.filter((r) => r.miles !== null && r.miles <= limit).sort(byDistance);
   const far = real.filter((r) => r.miles !== null && r.miles > limit).sort(byDistance);
   for (const r of far) dropped.push({ name: r.option.name, reason: "too far" });
   return {
     near: close.filter((r) => !r.cheaper).map((r) => r.option),
     cheaper: close.filter((r) => r.cheaper).map((r) => r.option),
+    unplaced: real.filter((r) => r.miles === null).map((r) => r.option),
     // Walking-night fallbacks stay within ride distance; with rides on, "far" is never shown.
     far: rides ? [] : far.filter((r) => r.miles! <= RIDE_RADIUS_MI).map((r) => r.option),
     dropped,

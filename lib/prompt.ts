@@ -26,7 +26,7 @@ Accuracy:
 
 Taste:
 - Stay inside the requested area and follow the getting-around rule given with each request (a walking night or short rides OK).
-- Respect the budget, using the dollar ranges given with each request. Price places honestly by what they cost in NYC today, not by reputation: if mains average $38, a restaurant is $$$, not $$. When unsure between two levels, assume the higher one.
+- Respect the budget, using the dollar ranges given with each request. Price places honestly by what they cost in NYC today, not by reputation: if mains average $38, a restaurant is $$$, not $$. Famous cocktail bars (Death & Co, PDT, Employees Only, Attaboy) charge $20-24 a cocktail, so they're $$$. When unsure between two levels, assume the higher one.
 - Vary the options. For dinner, each option should be a different specific cuisine (not three Italian places) unless the person asked for one cuisine. For bars, each option should be a different style, such as cocktail, wine, dive with character, speakeasy, and listening bar. Mix well-known favorites with lesser-known spots.
 - Label each option's category with the specific cuisine or style, like "Sichuan", "Neapolitan pizza", "Oaxacan", "Natural wine bar" or "Jazz club", never a broad bucket like "Asian" or "Latin".
 - Write the "why" in a warm, specific, non-generic voice.
@@ -66,7 +66,10 @@ const TICKET_PRICES = ["free to $20", "$20-50", "$50-100", "over $100"];
 
 function priceTable(piece: PieceId | undefined): { what: string; ranges: string[] }[] {
   const dinner = { what: "dinner (food per person, before drinks)", ranges: DINNER_PRICES };
-  const drinks = { what: "bars and clubs", ranges: DRINK_PRICES };
+  const drinks = {
+    what: "bars and clubs (famous craft cocktail bars like Death & Co, PDT, Employees Only and Attaboy are $$$)",
+    ranges: DRINK_PRICES,
+  };
   const tickets = { what: "shows, activities and events (ticket or entry per person)", ranges: TICKET_PRICES };
   if (piece === "dinner") return [dinner];
   if (piece === "pre_drinks" || piece === "post_drinks" || piece === "dancing") return [drinks];
@@ -135,10 +138,10 @@ function varietyLine(trip: Trip, piece: PieceId, n: number) {
     if (trip.cuisines.length === 1) {
       return `They asked for ${trip.cuisines[0]}, so vary within it: different regions, dishes or styles, from casual to special.`;
     }
-    const spread = trip.cuisines.length
-      ? ` Spread them across the cuisines they picked rather than piling onto one.`
-      : "";
-    return `Give ${n} different specific cuisines, e.g. Sichuan, Oaxacan, Georgian, Neapolitan pizza, Ethiopian, Basque. No two from the same family (not two Italian, not two Japanese).${spread} At least two should be lesser-known local spots, not just the famous names.`;
+    if (trip.cuisines.length) {
+      return `Only suggest the cuisines they picked (${trip.cuisines.join(", ")}), spread across all of them rather than piling onto one. Within each, be specific (e.g. Oaxacan rather than just Mexican). At least two should be lesser-known local spots, not just the famous names.`;
+    }
+    return `Give ${n} different specific cuisines, e.g. Sichuan, Oaxacan, Georgian, Neapolitan pizza, Ethiopian, Basque. No two from the same family (not two Italian, not two Japanese). At least two should be lesser-known local spots, not just the famous names.`;
   }
   if (piece === "pre_drinks" || piece === "post_drinks") {
     return `Make each of the ${n} a different bar style${trip.barTypes.length ? `, leaning toward the styles they like` : ""}.`;
