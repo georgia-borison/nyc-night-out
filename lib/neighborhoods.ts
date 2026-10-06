@@ -1,4 +1,6 @@
-export type Borough = "Manhattan" | "Brooklyn" | "Queens" | "Bronx" | "Staten Island";
+import areaNtas from "./areaNtas.json";
+
+export type Borough ="Manhattan" | "Brooklyn" | "Queens" | "Bronx" | "Staten Island";
 
 export type Area = {
   name: string;
@@ -113,4 +115,22 @@ export function areaInfo(name: string): AreaInfo | null {
 
 export function isListedArea(name: string) {
   return areaInfo(name) !== null;
+}
+
+// Official NYC neighborhood boundaries (NTAs) behind each area, for the map.
+const NTAS = areaNtas as unknown as Record<string, string[]>;
+
+/** NTA names that make up an area: its own, or all of its pieces' for a big area. */
+export function ntasForArea(name: string): string[] {
+  const info = areaInfo(name);
+  if (info?.parts) return info.parts.flatMap((p) => NTAS[p] ?? []);
+  return NTAS[name] ?? [];
+}
+
+/** The area to select when a map shape is tapped: the piece, or its whole neighborhood when rides are on. */
+export function areaForNta(nta: string, rides: boolean): string | null {
+  const leaf = Object.keys(NTAS).find((k) => !k.startsWith("_") && NTAS[k].includes(nta));
+  if (!leaf) return null;
+  const parent = areaInfo(leaf)?.parent;
+  return rides && parent ? parent : leaf;
 }

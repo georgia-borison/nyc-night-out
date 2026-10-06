@@ -22,8 +22,8 @@ export function Logo({ size = "sm" }: { size?: "sm" | "lg" }) {
         className={`${lg ? "size-11" : "size-7"} shrink-0 drop-shadow-[0_0_10px_rgba(255,138,91,0.55)]`}
       />
       <span className={`font-display italic leading-none tracking-tight ${lg ? "text-5xl" : "text-2xl"}`}>
-        <span className="text-fg">Night Out</span>
-        <span className="ml-[0.3em] text-drinks">{CITY.short}</span>
+        {/* A real space, so screen readers and copy-paste get "Night Out NYC". */}
+        <span className="text-fg">Night Out</span> <span className="text-drinks">{CITY.short}</span>
       </span>
     </span>
   );

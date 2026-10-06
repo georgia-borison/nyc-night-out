@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { useRovingFocus } from "@/lib/useRovingFocus";
 
 export function Chip({
   selected,
@@ -27,22 +28,77 @@ export function Chip({
   );
 }
 
+/** A labeled row of buttons: one Tab stop, arrow keys move between them. */
+export function ChipRow({ label, children, className = "flex flex-wrap gap-2" }: { label: string; children: ReactNode; className?: string }) {
+  const { ref, onKeyDown } = useRovingFocus<HTMLDivElement>();
+  return (
+    <div ref={ref} role="group" aria-label={label} onKeyDown={onKeyDown} className={className}>
+      {children}
+    </div>
+  );
+}
+
 export function ChipGroup<T extends string>({
+  label,
   options,
   selected,
   onToggle,
 }: {
+  label: string;
   options: readonly T[];
   selected: readonly T[];
   onToggle: (value: T) => void;
 }) {
   return (
-    <div className="flex flex-wrap gap-2">
+    <ChipRow label={label}>
       {options.map((o) => (
         <Chip key={o} selected={selected.includes(o)} onClick={() => onToggle(o)}>
           {o}
         </Chip>
       ))}
+    </ChipRow>
+  );
+}
+
+/** An on/off switch with a label and a line describing the current mode. */
+export function Switch({
+  checked,
+  onChange,
+  label,
+  onText,
+  offText,
+}: {
+  checked: boolean;
+  onChange: (next: boolean) => void;
+  label: string;
+  onText: ReactNode;
+  offText: ReactNode;
+}) {
+  return (
+    <div className="flex items-start gap-4 rounded-2xl border border-line bg-surface p-4">
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-label={label}
+        onClick={() => onChange(!checked)}
+        className={`relative mt-0.5 inline-flex h-7 w-12 shrink-0 items-center rounded-full border transition-colors ${
+          checked ? "border-accent bg-accent" : "border-line bg-surface-2"
+        }`}
+      >
+        <span
+          aria-hidden
+          className={`inline-block size-5 rounded-full shadow transition-transform ${
+            checked ? "translate-x-6 bg-accent-ink" : "translate-x-1 bg-muted"
+          }`}
+        />
+      </button>
+      <div className="min-w-0">
+        <p className="font-medium">{label}</p>
+        <p className="mt-0.5 text-sm text-muted" aria-live="polite">
+          {checked ? onText : offText}
+        </p>
+      </div>
     </div>
   );
 }

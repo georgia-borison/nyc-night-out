@@ -17,7 +17,8 @@ import {
   type Trip,
 } from "@/lib/schema";
 import { milesBetween } from "@/lib/walk";
-import { Chip, ChipGroup, ErrorBox, GhostButton, PrimaryButton, Section } from "./ui";
+import dynamic from "next/dynamic";
+import { Chip, ChipGroup, ChipRow, ErrorBox, GhostButton, PrimaryButton, Section, Switch } from "./ui";
 import { OptionCard, OptionSkeleton } from "./OptionCard";
 import { LoadingShow } from "./LoadingShow";
 import { NightPlan } from "./NightPlan";
@@ -33,7 +34,13 @@ type PieceResult = {
   toppingUp?: boolean;
 };
 
-const STEPS = ["Where", "Vibe", "The night", "Options", "Itinerary"];
+const STEPS = ["Area", "Vibe", "Night", "Picks", "Plan"];
+
+// Leaflet needs the browser, so the area map never renders on the server.
+const AreaMap = dynamic(() => import("./AreaMap"), {
+  ssr: false,
+  loading: () => <div className="skeleton h-full w-full" />,
+});
 
 const VIBE_IDEAS = [
   "Low-key date night, natural wine, somewhere we can actually talk",
@@ -78,6 +85,12 @@ export function Planner() {
   const [rides, setRides] = useState(false);
   // Map lookups for picked venues, started the moment they're picked.
   const locating = useRef(new Map<string, Promise<{ lat: number; lng: number } | null>>());
+  // Escape on the area map hands focus back to the list (the selected chip, else the first).
+  const areaListRef = useRef<HTMLDivElement>(null);
+  const focusAreaList = () => {
+    const list = areaListRef.current;
+    (list?.querySelector<HTMLButtonElement>('button[aria-pressed="true"]') ?? list?.querySelector("button"))?.focus();
+  };
 
   const [results, setResults] = useState<Partial<Record<PieceId, PieceResult>>>({});
   const [picks, setPicks] = useState<Partial<Record<PieceId, Option>>>({});
@@ -370,33 +383,47 @@ export function Planner() {
       {step === 0 && (
         <div className="space-y-8">
           <Heading title="Where are you headed?" sub="Pick the neighborhood you'll be around tonight." />
-          <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-line bg-surface p-4 transition hover:border-muted">
-            <input
-              type="checkbox"
-              checked={rides}
-              onChange={(e) => toggleRides(e.target.checked)}
-              className="mt-0.5 size-5 shrink-0 accent-[var(--accent)]"
-            />
-            <span>
-              <span className="block font-medium">I&rsquo;m up for a quick cab or subway ride between stops</span>
-              <span className="mt-0.5 block text-sm text-muted">
-                {rides
-                  ? "Bigger neighborhoods are open to you, like the whole Upper West Side."
-                  : "Keeping it walkable. Big neighborhoods are split into smaller pieces so every stop is a short walk."}
-              </span>
-            </span>
-          </label>
-          {visibleAreas(rides).map((b) => (
-            <Section key={b.borough} title={b.borough}>
-              <div className="flex flex-wrap gap-2">
-                {b.areas.map((a) => (
-                  <Chip key={a.name} selected={area === a.name} onClick={() => setArea(a.name)}>
-                    {a.name}
-                  </Chip>
-                ))}
-              </div>
-            </Section>
-          ))}
+          <Switch
+            checked={rides}
+            onChange={toggleRides}
+            label="Short cab or subway rides between stops"
+            onText={
+              <>
+                <strong className="font-semibold text-fg">On:</strong> whole neighborhoods, quick rides OK
+              </>
+            }
+            offText={
+              <>
+                <strong className="font-semibold text-fg">Off:</strong> walking only, so big neighborhoods are split
+                into smaller pieces
+              </>
+            }
+          />
+          <figure className="space-y-2">
+            <div
+              role="region"
+              aria-label="Neighborhood map (optional; the same choices are in the list below)"
+              className="h-[260px] overflow-hidden rounded-2xl border border-line sm:h-[360px]"
+            >
+              <AreaMap selected={area} rides={rides} onSelect={setArea} onEscape={focusAreaList} />
+            </div>
+            <figcaption className="text-xs text-muted">
+              Tap a neighborhood on the map, or choose from the list.
+            </figcaption>
+          </figure>
+          <div ref={areaListRef} className="space-y-8">
+            {visibleAreas(rides).map((b) => (
+              <Section key={b.borough} title={b.borough}>
+                <ChipRow label={`${b.borough} neighborhoods`}>
+                  {b.areas.map((a) => (
+                    <Chip key={a.name} selected={area === a.name} onClick={() => setArea(a.name)}>
+                      {a.name}
+                    </Chip>
+                  ))}
+                </ChipRow>
+              </Section>
+            ))}
+          </div>
           <Section title="Somewhere else" hint="Type a neighborhood, a cross street, or a venue you'll be near.">
             <input
               value={isListedArea(area) ? "" : area}
@@ -454,21 +481,21 @@ export function Planner() {
             </Field>
             <Field label="Party size">
               <div className="flex items-center gap-3">
-                <StepperButton onClick={() => setPartySize((n) => Math.max(1, n - 1))}>−</StepperButton>
-                <span className="w-8 text-center text-lg tabular-nums">{partySize}</span>
-                <StepperButton onClick={() => setPartySize((n) => Math.min(30, n + 1))}>+</StepperButton>
+                <StepperButton label="Fewer people" onClick={() => setPartySize((n) => Math.max(1, n - 1))}>−</StepperButton>
+                <span className="w-8 text-center text-lg tabular-nums" aria-live="polite">{partySize}</span>
+                <StepperButton label="More people" onClick={() => setPartySize((n) => Math.min(30, n + 1))}>+</StepperButton>
               </div>
             </Field>
           </div>
 
           <Section title="Budget" hint="Per person, roughly.">
-            <div className="flex flex-wrap gap-2">
+            <ChipRow label="Budget">
               {BUDGETS.map((b) => (
                 <Chip key={b} selected={budget === b} onClick={() => setBudget(b)}>
                   <span className="px-1 tracking-widest">{b}</span>
                 </Chip>
               ))}
-            </div>
+            </ChipRow>
           </Section>
 
           <Nav onBack={() => setStep(0)} onNext={() => setStep(2)} nextDisabled={!date || !time} />
@@ -478,7 +505,7 @@ export function Planner() {
       {step === 2 && (
         <div className="space-y-8">
           <Heading title="Build the night" sub="Pick the parts you want. You'll get a few options for each." />
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <ChipRow label="Parts of the night" className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             {PIECES.map((p) => {
               const on = pieces.includes(p.id);
               return (
@@ -491,26 +518,27 @@ export function Planner() {
                     on ? "border-accent bg-accent-soft" : "border-line bg-surface hover:border-muted"
                   }`}
                 >
-                  <span className="text-2xl">{p.emoji}</span>
+                  <span aria-hidden className="text-2xl">{p.emoji}</span>
                   <span className="font-medium">{p.label}</span>
                 </button>
               );
             })}
-          </div>
+          </ChipRow>
 
           {showCuisines && (
             <Section title="Cuisines (optional)" hint="Leave blank for a mix.">
-              <ChipGroup options={CUISINES} selected={cuisines} onToggle={(c) => setCuisines((l) => toggle(l, c))} />
+              <ChipGroup label="Cuisines" options={CUISINES} selected={cuisines} onToggle={(c) => setCuisines((l) => toggle(l, c))} />
             </Section>
           )}
           {showBars && (
             <Section title="Bar styles (optional)">
-              <ChipGroup options={BAR_TYPES} selected={barTypes} onToggle={(c) => setBarTypes((l) => toggle(l, c))} />
+              <ChipGroup label="Bar styles" options={BAR_TYPES} selected={barTypes} onToggle={(c) => setBarTypes((l) => toggle(l, c))} />
             </Section>
           )}
           {showActivities && (
             <Section title="Activities (optional)">
               <ChipGroup
+                label="Activities"
                 options={ACTIVITY_TYPES}
                 selected={activityTypes}
                 onToggle={(c) => setActivityTypes((l) => toggle(l, c))}
@@ -649,23 +677,37 @@ export function Planner() {
   );
 }
 
+/** Progress through the steps: done steps are buttons that jump back; later ones are just labels. */
 function Stepper({ step, onJump }: { step: number; onJump: (i: number) => void }) {
   return (
-    <ol className="flex gap-1.5">
-      {STEPS.map((s, i) => (
-        <li key={s} className="flex-1">
-          <button
-            type="button"
-            onClick={() => onJump(i)}
-            disabled={i >= step}
-            className="w-full text-left disabled:cursor-default"
-          >
-            <span className={`block h-1 rounded-full ${i <= step ? "bg-accent" : "bg-line"}`} />
-            <span className={`mt-1.5 hidden text-xs sm:block ${i === step ? "text-fg" : "text-muted"}`}>{s}</span>
-          </button>
-        </li>
-      ))}
-    </ol>
+    <nav aria-label="Progress">
+      <ol className="flex gap-1.5">
+        {STEPS.map((s, i) => {
+          const bar = <span aria-hidden className={`block h-1 rounded-full ${i <= step ? "bg-accent" : "bg-line"}`} />;
+          const text = `mt-1.5 block text-xs ${i === step ? "font-medium text-fg" : i < step ? "text-muted" : "text-muted/60"}`;
+          return (
+            <li key={s} className="flex-1" aria-current={i === step ? "step" : undefined}>
+              {i < step ? (
+                <button
+                  type="button"
+                  onClick={() => onJump(i)}
+                  aria-label={`Back to ${s}`}
+                  className="group w-full rounded text-left"
+                >
+                  {bar}
+                  <span className={`${text} group-hover:text-fg`}>{s}</span>
+                </button>
+              ) : (
+                <div>
+                  {bar}
+                  <span className={text}>{s}</span>
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    </nav>
   );
 }
 
@@ -687,11 +729,12 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-function StepperButton({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+function StepperButton({ onClick, label, children }: { onClick: () => void; label: string; children: React.ReactNode }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      aria-label={label}
       className="grid size-10 place-items-center rounded-full border border-line text-lg hover:border-muted"
     >
       {children}

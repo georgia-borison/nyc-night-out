@@ -142,3 +142,24 @@ input[type="time"]::-webkit-calendar-picker-indicator {
   .moon-bob, .star-twinkle, .phrase-fade { animation: none; }
   .star-twinkle { opacity: 0.8; }
 }
+
+/* Keyboard focus: a clear accent ring on everything interactive (the browser
+   default is nearly invisible on the dark background). */
+:where(a, button, input, textarea, select, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Hover label on the neighborhood map. */
+.leaflet-tooltip.area-tip {
+  background: var(--surface-2);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: 9999px;
+  padding: 2px 10px;
+  font: 500 12px/1.4 var(--font-geist-sans), system-ui, sans-serif;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+}
+.leaflet-tooltip.area-tip::before {
+  display: none;
+}
