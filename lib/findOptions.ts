@@ -1,8 +1,10 @@
 import { askClaude } from "./claude";
 import { lookupPlace, placesEnabled, placesFor, type Candidate } from "./places";
-import { checkListedSite, cleanUrl, linkKindOf } from "./verifyUrl";
+import { daysUntil } from "./timing";
+import { checkListedSite, cleanUrl, inspectListedSite, linkKindOf, type BookingLink, type BookingPlatform } from "./verifyUrl";
 import { CANDIDATES, curatePrompt, searchesFor, sectionPrompt, type SectionRequest } from "./prompt";
 import {
+  BOOKING_PLATFORMS,
   BUDGETS,
   OPTIONS_JSON_SCHEMA,
   OptionsResultSchema,
@@ -12,6 +14,7 @@ import {
   cleanOptions,
   priceLevel,
   type Option,
+  type Reservations,
 } from "./schema";
 import { SHOW, vetOptions, type Vetted } from "./vetOptions";
 
@@ -68,11 +71,12 @@ async function curate(req: SectionRequest, candidates: Candidate[]): Promise<{ v
   const [low, high] = [Math.min(...levels), Math.max(...levels)];
   const vetted: Vetted = { near: [], cheaper: [], unplaced: [], far: [], dropped: [] };
   const used = new Set<string>();
+  const soon = daysUntil(req.date) <= 1;
   // Check the picked places' websites all at once (cached, so refreshes are instant).
   const sites = new Map(
     data.options.flatMap((p) => {
       const c = candidates[p.number - 1];
-      return c ? [[c.id, limited(() => checkListedSite(c.url, c.name))] as const] : [];
+      return c ? [[c.id, limited(() => inspectListedSite(c.url, c.name))] as const] : [];
     }),
   );
   for (const pick of data.options) {
@@ -87,6 +91,12 @@ async function curate(req: SectionRequest, candidates: Candidate[]): Promise<{ v
       vetted.dropped.push({ name: c.name, reason: "over budget" });
       continue;
     }
+    // Tonight or tomorrow, a place that books up weeks ahead won't have a table.
+    if (pick.booking === "reservations_essential" && soon) {
+      vetted.dropped.push({ name: c.name, reason: "hard to book" });
+      continue;
+    }
+    const site = await sites.get(c.id)!;
     const option: Option = {
       name: c.name,
       category: pick.category,
@@ -96,15 +106,40 @@ async function curate(req: SectionRequest, candidates: Candidate[]): Promise<{ v
       why: pick.why,
       tip: pick.tip,
       when: pick.when || c.hours,
-      ...(await linkFor(c, sites.get(c.id)!)),
+      ...(await linkFor(c, Promise.resolve(site.ok))),
       lat: c.lat,
       lng: c.lng,
+      reservations: reservationsFor(pick, c, site.booking),
     };
     if (c.far) vetted.far.push(option);
     else if (level !== null && level < low) vetted.cheaper.push(option);
     else vetted.near.push(option);
   }
   return { vetted, costUsd };
+}
+
+/**
+ * How a place takes guests, from three sources: a booking link or widget on
+ * its own website (most reliable), Google's "takes reservations", and what
+ * Claude knows (walk-in only, hard to get, which platform).
+ */
+function reservationsFor(
+  pick: { booking: "walk_in_only" | "reservations_recommended" | "reservations_essential" | "either"; platform: string },
+  c: Candidate,
+  site: BookingLink | undefined,
+): Reservations | undefined {
+  const known = (BOOKING_PLATFORMS as readonly string[]).includes(pick.platform) ? (pick.platform as BookingPlatform) : undefined;
+  const platform = site?.platform ?? known;
+  const takesBookings = !!site || c.reservable === true || pick.booking !== "walk_in_only";
+  if (!takesBookings) return { policy: "walk_in" };
+  // Claude says walk-in only, but the site or Google shows bookings: both work.
+  const policy = pick.booking === "either" || pick.booking === "walk_in_only" ? "both" : "reservations";
+  return {
+    policy,
+    ...(platform ? { platform } : {}),
+    ...(site?.url ? { url: site.url } : {}),
+    ...(pick.booking === "reservations_essential" ? { bookAhead: true } : {}),
+  };
 }
 
 // At most this many website checks at once.

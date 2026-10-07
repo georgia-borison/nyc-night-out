@@ -1,5 +1,6 @@
 import { areaInfo } from "./neighborhoods";
-import { targetMinutes, type Candidate } from "./places";
+import type { Candidate } from "./places";
+import { clockOf, daysUntil, targetMinutes } from "./timing";
 import {
   BUDGETS,
   budgetLabel,
@@ -92,7 +93,7 @@ function budgetLines(trip: Trip, piece?: PieceId) {
   return [rule, ...lines];
 }
 
-function tripLines(trip: Trip, piece?: PieceId) {
+function tripLines(trip: Trip & { otherPieces?: PieceId[] }, piece?: PieceId) {
   const lines = [
     `Area: ${trip.area}`,
     `Date: ${formatDate(trip.date)}`,
@@ -124,12 +125,6 @@ function tripLines(trip: Trip, piece?: PieceId) {
       : "Getting around: a walking night. Every option's address must be inside the area boundaries above, or at most a few blocks past them. Favor places within 10-15 minutes' walk of each other so the whole night works on foot. Before submitting, check each address against the boundaries and swap out anything that's outside.",
   );
   return lines.join("\n");
-}
-
-/** Minutes after midnight (possibly past 24h) to "HH:MM". */
-function clockOf(minutes: number) {
-  const m = ((Math.round(minutes) % 1440) + 1440) % 1440;
-  return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 }
 
 function today() {
@@ -214,9 +209,23 @@ function candidateLine(c: Candidate, i: number) {
     `${c.rating.toFixed(1)}★ from ${c.ratings.toLocaleString("en-US")} reviews`,
     c.address.split(",")[0],
     c.hours ? `that day: ${c.hours}` : "",
+    c.reservable === true ? "takes reservations" : c.reservable === false ? "no reservations" : "",
     c.far ? "(a bit outside the area)" : "",
   ];
   return parts.filter(Boolean).join(" · ");
+}
+
+/** How far ahead the night is, and what that means for places that need a reservation. */
+function bookingLine(date: string, partySize: number) {
+  const days = daysUntil(date);
+  const when = days <= 0 ? "tonight" : days === 1 ? "tomorrow" : `in ${days} days`;
+  const group =
+    partySize >= 5
+      ? ` They're a group of ${partySize}, which is harder to seat, so favor places that take group reservations or have room for walk-ins.`
+      : "";
+  return days <= 1
+    ? `Reservations: this night is ${when}, so don't pick places that are reservation-only and usually booked up days or weeks ahead; they won't have a table. Walk-in-friendly places, and ones that take reservations but aren't hard to get, are good. For walk-in places, say in the tip how to beat the wait.${group}`
+    : `Reservations: this night is ${when}. Places that book up fast are fine, but say to book now in the tip. For walk-in places, say in the tip how to beat the wait.${group}`;
 }
 
 /**
@@ -240,7 +249,9 @@ ${candidates.map(candidateLine).join("\n")}
 
 Pick the ${n} best for this night, best first. Favor places that fit the vibe and the crowd described in your instructions over the highest ratings; skip chains, tourist traps and places that don't suit this part of the night. Prefer places inside the area over ones marked "a bit outside the area".
 
-For each pick give: its number, a specific category (the cuisine or bar style, e.g. "Sichuan" or "Natural wine bar"), your own honest price level for it (Google's often runs low for NYC; skip places you know are over the budget), a one-sentence "why" under 20 words, a "tip" under 25 words, and "when" (the hours that matter tonight, from the list). Don't invent facts the list doesn't support and you aren't sure of.`;
+For each pick give: its number, a specific category (the cuisine or bar style, e.g. "Sichuan" or "Natural wine bar"), your own honest price level for it (Google's often runs low for NYC; skip places you know are over the budget), how it takes guests ("booking") and where it takes reservations ("platform"), a one-sentence "why" under 20 words, a "tip" under 25 words, and "when" (the hours that matter tonight, from the list). Don't invent facts the list doesn't support and you aren't sure of.
+
+${bookingLine(req.date, req.partySize)}`;
   const others = req.otherPieces.filter((p) => p !== req.piece);
   if (others.length) {
     prompt += `\n\nThe other parts of this night (${others.map(pieceLabel).join(", ")}) are being planned separately. Only pick places that clearly belong in "${pieceLabel(req.piece)}".`;

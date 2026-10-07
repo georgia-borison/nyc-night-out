@@ -43,6 +43,18 @@ export function priceLevel(price: string): number | null {
 }
 
 export const LINK_KINDS = ["website", "instagram", "tickets", "maps"] as const;
+export const BOOKING_PLATFORMS = ["resy", "opentable", "tock", "sevenrooms"] as const;
+
+/** How a place takes guests, and where to book it. */
+export const ReservationsSchema = z.object({
+  policy: z.enum(["reservations", "walk_in", "both"]),
+  platform: z.enum(BOOKING_PLATFORMS).optional(),
+  /** The venue's own booking page on that platform, when known. */
+  url: z.string().optional(),
+  /** Books up well ahead; reserve early. */
+  bookAhead: z.boolean().optional(),
+});
+export type Reservations = z.infer<typeof ReservationsSchema>;
 
 /** A place the person already has booked; the rest of the night is planned around it. */
 export const BookingSchema = z.object({
@@ -104,6 +116,7 @@ export const OptionSchema = z.object({
   linkKind: z.enum(LINK_KINDS).optional(),
   /** The night was planned around this; it can't be swapped. */
   booked: z.boolean().optional(),
+  reservations: ReservationsSchema.optional(),
 });
 export type Option = z.infer<typeof OptionSchema>;
 
@@ -161,6 +174,7 @@ export const ItineraryStopSchema = z.object({
   lng: z.number().optional(),
   linkKind: z.enum(LINK_KINDS).optional(),
   booked: z.boolean().optional(),
+  reservations: ReservationsSchema.optional(),
   // Real walk from the previous stop (lib/walk.ts).
   walk: z.object({ minutes: z.number(), miles: z.number(), estimated: z.boolean().optional() }).optional(),
 });
@@ -255,6 +269,8 @@ export const PicksResultSchema = z.object({
       number: z.number().int(),
       category: z.string(),
       price: z.string(),
+      booking: z.enum(["walk_in_only", "reservations_recommended", "reservations_essential", "either"]),
+      platform: z.enum(["resy", "opentable", "tock", "sevenrooms", "other", "unknown"]),
       why: z.string(),
       tip: z.string(),
       when: z.string(),
@@ -272,7 +288,7 @@ export const PICKS_JSON_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["number", "category", "price", "why", "tip", "when"],
+        required: ["number", "category", "price", "booking", "platform", "why", "tip", "when"],
         properties: {
           number: { type: "integer", description: "The place's number in the list" },
           category: OPTION_JSON_SCHEMA.properties.category,
@@ -280,6 +296,17 @@ export const PICKS_JSON_SCHEMA = {
             type: "string",
             description:
               "Your own read of what it costs per person in NYC today, using the dollar ranges in the request: $, $, $$ or $$.",
+          },
+          booking: {
+            type: "string",
+            enum: ["walk_in_only", "reservations_recommended", "reservations_essential", "either"],
+            description:
+              "How it takes guests: walk_in_only (no reservations), either (reservations taken, walk-ins easy), reservations_recommended (book or risk a wait), reservations_essential (books up days or weeks ahead, few walk-ins).",
+          },
+          platform: {
+            type: "string",
+            enum: ["resy", "opentable", "tock", "sevenrooms", "other", "unknown"],
+            description: "Where it takes reservations, if you know. 'unknown' if unsure.",
           },
           why: OPTION_JSON_SCHEMA.properties.why,
           tip: OPTION_JSON_SCHEMA.properties.tip,

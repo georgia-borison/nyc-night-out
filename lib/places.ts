@@ -7,6 +7,7 @@ import { areaShape } from "./areaShape";
 import { areaContext } from "./geocode";
 import { BUDGETS, budgetLevels, type PieceId, type Trip } from "./schema";
 import { nameWords } from "./verifyUrl";
+import { targetMinutes } from "./timing";
 import { milesBetween } from "./walk";
 import { WALK_RADIUS_MI } from "./vetOptions";
 
@@ -24,6 +25,8 @@ const FIELDS = [
   "places.userRatingCount",
   "places.websiteUri",
   "places.googleMapsUri",
+  // Whether it takes reservations (Google's "Enterprise + Atmosphere" tier).
+  "places.reservable",
   "places.primaryType",
   "places.regularOpeningHours",
 ].join(",");
@@ -54,6 +57,8 @@ export type Candidate = {
   rating: number;
   ratings: number;
   url: string;
+  /** Google says it takes reservations (null if Google doesn't know). */
+  reservable: boolean | null;
   /** Google Maps page for this exact place: the fallback when the website doesn't check out. */
   mapsUrl: string;
   /** Opening hours on the night's weekday, e.g. "5:00 PM – 2:00 AM". */
@@ -76,6 +81,7 @@ type GooglePlace = {
   websiteUri?: string;
   googleMapsUri?: string;
   primaryType?: string;
+  reservable?: boolean;
   regularOpeningHours?: {
     weekdayDescriptions?: string[];
     periods?: { open: Time; close?: Time }[];
@@ -197,16 +203,6 @@ function priceOf(p: GooglePlace, piece: PieceId): { level: number | null; text: 
 
 // ---- Hours ----
 
-// When each part of the night roughly happens, in minutes after the start time.
-const OFFSET: Record<PieceId, number> = {
-  pre_drinks: 0,
-  dinner: 60,
-  activity: 150,
-  events: 150,
-  post_drinks: 210,
-  dancing: 270,
-};
-
 function minutesOf(t: Time) {
   return t.day * 1440 + t.hour * 60 + t.minute;
 }
@@ -232,7 +228,11 @@ function openAt(p: GooglePlace, day: number, minute: number): boolean | null {
  * Real places for one part of the night: operating, well rated, within the
  * budget, open around when they'd go, and inside the area (or close to it).
  */
-export async function placesFor(piece: PieceId, trip: Trip, exclude: string[] = []): Promise<Candidate[]> {
+export async function placesFor(
+  piece: PieceId,
+  trip: Trip & { otherPieces?: PieceId[] },
+  exclude: string[] = [],
+): Promise<Candidate[]> {
   const queries = queriesFor(piece, trip);
   if (!queries.length) return [];
 
@@ -293,24 +293,12 @@ function toCandidate(p: GooglePlace, piece: PieceId, day: number, far: boolean):
     ratings: p.userRatingCount ?? 0,
     url: p.websiteUri ?? "",
     mapsUrl: p.googleMapsUri ?? "",
+    reservable: p.reservable ?? null,
     hours: hoursOn(p, day),
     far,
   };
 }
 
-/**
- * When each part of the night happens, in minutes after midnight. Normally
- * counted from the night's start; with a timed booking, from the booking
- * (drinks an hour before a 7:30 dinner, the show after it).
- */
-export function targetMinutes(piece: PieceId, trip: Trip) {
-  const toMin = (t: string) => {
-    const [h, m] = t.split(":").map(Number);
-    return h * 60 + m;
-  };
-  if (trip.booked?.time) return toMin(trip.booked.time) + OFFSET[piece] - OFFSET[trip.booked.piece];
-  return toMin(trip.time) + OFFSET[piece];
-}
 
 // ---- Looking up one place by name ----
 

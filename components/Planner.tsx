@@ -24,6 +24,8 @@ import dynamic from "next/dynamic";
 import { Chip, ChipGroup, ChipRow, ErrorBox, GhostButton, PrimaryButton, Section, Switch } from "./ui";
 import { OptionCard, OptionSkeleton } from "./OptionCard";
 import { BookingPicker, type VenueResult } from "./BookingPicker";
+import { TimeSelect } from "./TimeSelect";
+import { OFFSET, clockLabel, plannedClock } from "@/lib/timing";
 import { LoadingShow } from "./LoadingShow";
 import { NightPlan } from "./NightPlan";
 
@@ -53,16 +55,6 @@ const VIBE_IDEAS = [
   "Big night out: dinner, a show, then dancing till late",
 ];
 
-// Roughly when each part of the night happens, in minutes after it starts (as in lib/places.ts).
-const BOOKING_OFFSET: Record<PieceId, number> = {
-  pre_drinks: 0, dinner: 60, activity: 150, events: 150, post_drinks: 210, dancing: 270,
-};
-
-/** "19:30" -> "7:30 PM" */
-function formatClock(t: string) {
-  const [h, m] = t.split(":").map(Number);
-  return `${((h + 11) % 12) + 1}:${String(m).padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}`;
-}
 
 function todayInNY() {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
@@ -158,7 +150,7 @@ export function Planner() {
     // Start the night so the parts before the booking fit (an hour of drinks before a 7:30 dinner).
     if (next.time) {
       const [h, m] = next.time.split(":").map(Number);
-      const start = h * 60 + m - BOOKING_OFFSET[next.piece];
+      const start = h * 60 + m - OFFSET[next.piece];
       if (start >= 0) setTime(`${String(Math.floor(start / 60)).padStart(2, "0")}:${String(start % 60).padStart(2, "0")}`);
     }
   }
@@ -182,7 +174,7 @@ export function Planner() {
     address: b.address,
     price: "",
     why: "Your booking. Everything else is planned around it.",
-    tip: b.time ? `Booked for ${formatClock(b.time)}.` : "Already booked.",
+    tip: b.time ? `Booked for ${clockLabel(b.time)}.` : "Already booked.",
     when: "",
     url: b.url,
     linkKind: b.linkKind,
@@ -598,12 +590,7 @@ export function Planner() {
               />
             </Field>
             <Field label="Starting around">
-              <input
-                type="time"
-                value={time}
-                onChange={(e) => setTime(e.target.value)}
-                className="w-full rounded-xl border border-line bg-surface px-3 py-2.5 outline-none focus:border-accent"
-              />
+              <TimeSelect value={time} onChange={setTime} className="w-full py-2.5" />
             </Field>
             <Field label="Party size">
               <div className="flex items-center gap-3">
@@ -740,6 +727,7 @@ export function Planner() {
                           option={o}
                           selected={picks[p.id]?.name === o.name}
                           note={walkNote(o)}
+                          reserveWhen={{ date, time: plannedClock(p.id, { ...trip, otherPieces: pieces }), partySize }}
                           onSelect={() =>
                             !o.booked &&
                             setPicks((cur) => {

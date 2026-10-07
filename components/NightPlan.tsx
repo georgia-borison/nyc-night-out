@@ -3,7 +3,18 @@
 import { useMemo, useState, type CSSProperties } from "react";
 import dynamic from "next/dynamic";
 import { budgetLabel, type Itinerary, type ItineraryStop, type Trip } from "@/lib/schema";
-import { KIND_STYLE, linkLabel, mapsRouteUrl, mapsSearchUrl, pieceKind, searchUrl, transitIcon } from "@/lib/planStyle";
+import {
+  KIND_STYLE,
+  linkLabel,
+  mapsRouteUrl,
+  mapsSearchUrl,
+  pieceKind,
+  reservationLabel,
+  reserveLink,
+  searchUrl,
+  transitIcon,
+} from "@/lib/planStyle";
+import { clockLabel, parseClock } from "@/lib/timing";
 import type { MapStop } from "./PlanMap";
 
 // Leaflet needs the browser, so the map never renders on the server.
@@ -182,7 +193,29 @@ export function NightPlan({ itinerary, trip }: { itinerary: Itinerary; trip: Tri
                       {stop.address && <> · {stop.address}</>}
                     </p>
                     {stop.notes && <p className="mt-3 text-sm leading-relaxed">{stop.notes}</p>}
+                    {!stop.booked && reservationLabel(stop) && (
+                      <p className="mt-2 text-xs text-muted">{reservationLabel(stop)}</p>
+                    )}
                     <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                      {(() => {
+                        // Reserve for the stop's scheduled time, with the night's date and party size.
+                        const at = parseClock(stop.time);
+                        const reserve =
+                          !stop.booked && at ? reserveLink(stop, { date: trip.date, time: at, partySize: trip.partySize }) : null;
+                        return (
+                          reserve &&
+                          at && (
+                            <a
+                              href={reserve.href}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="rounded-full border border-accent bg-accent-soft px-3 py-1 font-medium text-accent hover:brightness-110"
+                            >
+                              {reserve.label} · {clockLabel(at)} · {trip.partySize} ↗
+                            </a>
+                          )
+                        );
+                      })()}
                       <a
                         href={stop.url || searchUrl(stop.name, stop.address)}
                         target="_blank"

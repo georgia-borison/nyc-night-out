@@ -20,7 +20,7 @@ export type Vetted = {
   /** Real and open but outside the walking radius, closest first. Used only as a last resort. */
   far: Option[];
   /** Names that were ruled out, and why (for logs and to exclude from top-ups). */
-  dropped: { name: string; reason: "closed" | "wrong address" | "not on Google" | "unverified" | "too far" | "over budget" }[];
+  dropped: { name: string; reason: "closed" | "wrong address" | "not on Google" | "hard to book" | "unverified" | "too far" | "over budget" }[];
 };
 
 export const SHOW = 3;

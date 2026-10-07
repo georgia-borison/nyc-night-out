@@ -134,7 +134,10 @@ async function readText(res: Response) {
 
 /** The page's readable text: meta tags, title and body, decoded and normalized. */
 async function pageText(res: Response) {
-  const html = await readText(res);
+  return textOf(await readText(res));
+}
+
+function textOf(html: string) {
   const body = html.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ");
   return normalize(decodeEntities(`${metaText(html)} ${body}`));
 }
@@ -303,25 +306,72 @@ function branchless(words: string[]) {
   return core.length ? core : words;
 }
 
-const listedCache = new Map<string, Promise<boolean>>();
+/** How a restaurant takes bookings, as found on its own website. */
+export type BookingPlatform = "resy" | "opentable" | "tock" | "sevenrooms";
+export type BookingLink = { platform: BookingPlatform; url?: string };
+
+// Direct links to a venue's booking page, when the site has one.
+const BOOKING_LINKS: [BookingPlatform, RegExp][] = [
+  ["resy", /https?:\/\/(?:www\.)?resy\.com\/cities\/[a-z0-9-]+\/(?:venues\/)?[a-z0-9-]+/i],
+  ["opentable", /https?:\/\/(?:www\.)?opentable\.com\/(?:r\/[a-z0-9-]+|restref\/client\/?\?[^"'\s<>]*rid=\d+)/i],
+  ["tock", /https?:\/\/(?:www\.)?exploretock\.com\/(?!tock\b)[a-z0-9-]+/i],
+  ["sevenrooms", /https?:\/\/(?:www\.)?sevenrooms\.com\/(?:reservations|explore)\/[a-z0-9-]+/i],
+];
+// Booking widgets that name the service without a link ("widgets.resy.com", "tock.js").
+const BOOKING_WIDGETS: [BookingPlatform, RegExp][] = [
+  ["resy", /widgets\.resy\.com|data-reservation-service="resy"|ResyWidget/i],
+  ["opentable", /opentable\.com\/widget|data-ot-restref|opentable\.com\/restref/i],
+  ["tock", /exploretock\.com/i],
+  ["sevenrooms", /sevenrooms\.com/i],
+];
+
+// Booking links for a chain's other cities ("sevenrooms.com/explore/buvettelondon").
+const OTHER_CITY = /london|paris|chicago|miami|los-?angeles|\bla\b|tokyo|boston|austin|dallas|houston|atlanta|seattle|denver|philadelphia|philly|nashville|vegas|sanfrancisco|san-francisco|\bsf\b|toronto|dc\b|washington|hamptons/i;
+const NYC_HINT = /nyc|new-?york|newyork|-ny\b|manhattan|brooklyn/i;
+
+/** The booking service a venue's page uses, with its direct booking link when there is one. */
+function bookingOn(html: string): BookingLink | undefined {
+  for (const [platform, re] of BOOKING_LINKS) {
+    const all = [...html.matchAll(new RegExp(re.source, "gi"))].map((m) => decodeEntities(m[0]));
+    if (!all.length) continue;
+    // A chain's site may list every city: take the New York link, never another city's.
+    const local = all.filter((u) => !OTHER_CITY.test(u.replace(/^https?:\/\/[^/]+/, "")));
+    const url = local.find((u) => NYC_HINT.test(u)) ?? (local.length === all.length ? local[0] : undefined);
+    return url ? { platform, url } : { platform };
+  }
+  for (const [platform, re] of BOOKING_WIDGETS) if (re.test(html)) return { platform };
+  return undefined;
+}
+
+/** A booking page given as the venue's website itself (Google sometimes lists the Resy page). */
+function bookingFromUrl(url: string): BookingLink | undefined {
+  for (const [platform, re] of BOOKING_LINKS) if (re.test(url)) return { platform, url };
+  return undefined;
+}
+
+export type ListedSite = { ok: boolean; booking?: BookingLink };
+const listedCache = new Map<string, Promise<ListedSite>>();
 
 /**
  * Whether a website from Google's listing still works and is still the
- * venue's. Google knows where the venue is, so unlike check() this doesn't
- * look for an address; it catches dead sites, lapsed domains taken over by
- * someone else, and ordering pages. Sites that block robots (403/429/503)
- * are kept: they load fine in a browser (the Met, Gotham Comedy Club).
+ * venue's, and how it takes bookings if the page says. Google knows where
+ * the venue is, so unlike check() this doesn't look for an address; it
+ * catches dead sites, lapsed domains taken over by someone else, and ordering
+ * pages. Sites that block robots (403/429/503) are kept: they load fine in a
+ * browser (the Met, Gotham Comedy Club).
  */
-export function checkListedSite(url: string, name: string): Promise<boolean> {
-  if (!url) return Promise.resolve(false);
+export function inspectListedSite(url: string, name: string): Promise<ListedSite> {
+  if (!url) return Promise.resolve({ ok: false });
   const key = `${url}|${name}`;
   let hit = listedCache.get(key);
   if (!hit) {
-    hit = (async () => {
+    hit = (async (): Promise<ListedSite> => {
       const host = hostOf(url);
-      if (!host || !/^https?:/i.test(url)) return false;
-      if (onHost(host, ORDERING_HOSTS)) return false;
-      if (onHost(host, SOCIAL_HOSTS)) return true; // they block robots; Google's link to them is fine
+      if (!host || !/^https?:/i.test(url)) return { ok: false };
+      if (onHost(host, ORDERING_HOSTS)) return { ok: false };
+      const direct = bookingFromUrl(url);
+      if (direct) return { ok: true, booking: direct };
+      if (onHost(host, SOCIAL_HOSTS)) return { ok: true }; // they block robots; Google's link to them is fine
       let res: Response;
       try {
         res = await fetch(url, {
@@ -330,21 +380,27 @@ export function checkListedSite(url: string, name: string): Promise<boolean> {
           signal: AbortSignal.timeout(5000),
         });
       } catch {
-        return false; // DNS failure, timeout, bad TLS
+        return { ok: false }; // DNS failure, timeout, bad TLS
       }
-      if (res.status === 403 || res.status === 429 || res.status === 503) return true;
-      if (!res.ok) return false;
+      if (res.status === 403 || res.status === 429 || res.status === 503) return { ok: true };
+      if (!res.ok) return { ok: false };
       const landed = landedHost(res, url);
-      if (onHost(landed, ORDERING_HOSTS)) return false;
+      if (onHost(landed, ORDERING_HOSTS)) return { ok: false };
       const words = branchless(nameWords(name));
-      const text = await pageText(res);
+      const html = await readText(res);
+      const text = textOf(html);
       // Named by the page or by the domain it lands on (not the one it started on).
-      return (
+      const ok =
         namesVenue(words, (w) => text.includes(w)) ||
-        namesVenue(words, (w) => landed.replace(/[^a-z0-9]/g, "").includes(w))
-      );
-    })().catch(() => false);
+        namesVenue(words, (w) => landed.replace(/[^a-z0-9]/g, "").includes(w));
+      return ok ? { ok, booking: bookingOn(html) } : { ok };
+    })().catch((): ListedSite => ({ ok: false }));
     listedCache.set(key, hit);
   }
   return hit;
+}
+
+/** Whether a website from Google's listing still works and is still the venue's. */
+export async function checkListedSite(url: string, name: string): Promise<boolean> {
+  return (await inspectListedSite(url, name)).ok;
 }

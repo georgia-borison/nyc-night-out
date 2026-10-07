@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Geist, Fraunces } from "next/font/google";
+import { HomeLink } from "@/components/HomeLink";
 import { Logo } from "@/components/Logo";
 import { CITY } from "@/lib/city";
 import "./globals.css";
@@ -26,9 +27,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html lang="en" className={`${geistSans.variable} ${fraunces.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">
         <header className="mx-auto flex w-full max-w-5xl items-center justify-between px-4 py-5 sm:px-6">
-          <Link href="/" aria-label={`Night Out ${CITY.short}, home`} className="transition-opacity hover:opacity-90">
+          <HomeLink label={`Night Out ${CITY.short}, home`}>
             <Logo />
-          </Link>
+          </HomeLink>
           <nav className="text-sm text-muted">
             <Link href="/plans" className="hover:text-fg">
               My plans

@@ -1,7 +1,8 @@
 "use client";
 
 import { useId } from "react";
-import { linkLabel, searchUrl } from "@/lib/planStyle";
+import { linkLabel, reservationLabel, reserveLink, searchUrl } from "@/lib/planStyle";
+import { clockLabel } from "@/lib/timing";
 import type { Option } from "@/lib/schema";
 
 export function OptionCard({
@@ -10,6 +11,7 @@ export function OptionCard({
   onSelect,
   onMoreLikeThis,
   note,
+  reserveWhen,
 }: {
   option: Option;
   selected: boolean;
@@ -17,8 +19,12 @@ export function OptionCard({
   onMoreLikeThis: () => void;
   /** e.g. "~25 min walk from UWS · 60s–70s" when it's outside a walking night's area. */
   note?: string;
+  /** The night's date, this part's planned time and the party size, for the Reserve button. */
+  reserveWhen?: { date: string; time: string; partySize: number };
 }) {
   const detailsId = useId();
+  const booking = reservationLabel(option);
+  const reserve = !option.booked && reserveWhen ? reserveLink(option, reserveWhen) : null;
   return (
     <article
       className={`flex flex-col rounded-2xl border transition ${
@@ -66,6 +72,7 @@ export function OptionCard({
           )}
           <span className="block text-sm leading-relaxed">{option.why}</span>
           {option.when && <span className="block text-xs text-muted">🕘 {option.when}</span>}
+          {booking && !option.booked && <span className="block text-xs text-muted">{booking}</span>}
           {option.tip && <span className="block text-xs text-muted">💡 {option.tip}</span>}
         </span>
       </button>
@@ -80,6 +87,17 @@ export function OptionCard({
           {linkLabel(option)} ↗
           <span className="sr-only"> for {option.name} (opens in a new tab)</span>
         </a>
+        {reserve && reserveWhen && (
+          <a
+            href={reserve.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium text-accent underline underline-offset-4 hover:brightness-110"
+          >
+            {reserve.label} · {clockLabel(reserveWhen.time)} · {reserveWhen.partySize} ↗
+            <span className="sr-only"> for {option.name} (opens in a new tab)</span>
+          </a>
+        )}
         {option.address && (
           <a
             href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${option.name} ${option.address}`)}`}

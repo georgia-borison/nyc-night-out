@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { PIECES, type Booking, type PieceId } from "@/lib/schema";
+import { TimeSelect } from "./TimeSelect";
 import { Chip, ChipRow, Section } from "./ui";
 
 export type VenueResult = {
@@ -89,12 +90,11 @@ export function BookingPicker({
           </div>
           <label className="flex flex-wrap items-center gap-3 text-sm">
             <span className="font-medium">Booked for</span>
-            <input
-              type="time"
-              aria-label="Booking time"
+            <TimeSelect
               value={booking.time}
-              onChange={(e) => onChange({ ...booking, time: e.target.value })}
-              className="rounded-xl border border-line bg-surface px-3 py-2 outline-none focus:border-accent"
+              onChange={(time) => onChange({ ...booking, time })}
+              ariaLabel="Booking time"
+              noneLabel="No set time"
             />
             <span className="text-xs text-muted">Optional; we&rsquo;ll fit everything else before and after.</span>
           </label>

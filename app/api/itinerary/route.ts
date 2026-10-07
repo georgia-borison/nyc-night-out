@@ -74,7 +74,14 @@ export async function POST(request: Request) {
     const linked = pinned.map((s) => {
       const pick = byName.get(s.name.trim().toLowerCase());
       if (!pick) return s;
-      return { ...s, url: pick.url, linkKind: pick.linkKind, address: pick.address || s.address, booked: pick.booked };
+      return {
+        ...s,
+        url: pick.url,
+        linkKind: pick.linkKind,
+        address: pick.address || s.address,
+        booked: pick.booked,
+        reservations: pick.reservations,
+      };
     });
 
     const stops = await attachWalks(linked);
