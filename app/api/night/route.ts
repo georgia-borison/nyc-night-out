@@ -119,7 +119,10 @@ export async function POST(request: Request) {
       };
 
       try {
-        const results = await Promise.all(pieces.map(runPiece));
+        // A booked part is already decided (the page shows it); search the rest around it.
+        const booked = trip.booked;
+        if (booked) shown.set(booked.piece, [booked.name]);
+        const results = await Promise.all(pieces.filter((p) => p !== booked?.piece).map(runPiece));
         console.log(`[night] all sections done at ${secs()}s, ~$${costUsd.toFixed(3)}`);
         const firstFailure = results.find((r) => r.failure)?.failure;
         // Nothing came back at all: show the reason (e.g. out of credits) instead of empty sections.

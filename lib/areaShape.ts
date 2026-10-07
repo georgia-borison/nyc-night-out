@@ -43,3 +43,13 @@ export function areaShape(area: string): AreaShape | null {
     },
   };
 }
+
+/** The listed area whose outline contains a point, for the walking or the rides view. */
+export function areaForPoint(point: { lat: number; lng: number }, rides: boolean): string | null {
+  const mode = rides ? "ride" : "walk";
+  for (const f of features as unknown as { properties: { area: string; mode: string } }[]) {
+    if (f.properties.mode !== "both" && f.properties.mode !== mode) continue;
+    if (areaShape(f.properties.area)?.contains(point)) return f.properties.area;
+  }
+  return null;
+}

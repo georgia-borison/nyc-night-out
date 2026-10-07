@@ -1,6 +1,7 @@
 import { areaContext, locateVenue, onMapNear } from "./geocode";
 import { BUDGETS, budgetLevels, priceLevel, type Option, type Trip } from "./schema";
-import { checkLinks } from "./verifyUrl";
+import { mapsSearchUrl } from "./planStyle";
+import { checkLinks, cleanUrl, linkKindOf } from "./verifyUrl";
 import { milesBetween } from "./walk";
 
 // On a walking night, keep options within this straight-line distance of the
@@ -19,13 +20,16 @@ export type Vetted = {
   /** Real and open but outside the walking radius, closest first. Used only as a last resort. */
   far: Option[];
   /** Names that were ruled out, and why (for logs and to exclude from top-ups). */
-  dropped: { name: string; reason: "closed" | "wrong address" | "unverified" | "too far" | "over budget" }[];
+  dropped: { name: string; reason: "closed" | "wrong address" | "not on Google" | "unverified" | "too far" | "over budget" }[];
 };
 
 export const SHOW = 3;
 export const NOT_MUCH_NEARBY = "Not much nearby matches your filters, so these are the closest.";
 
-export type VetTrip = Pick<Trip, "area" | "rides" | "budget" | "budgetTo">;
+export type VetTrip = Pick<Trip, "area" | "rides" | "budget" | "budgetTo" | "booked">;
+// Around a booking on a walking night: about a 10-minute walk.
+const BOOKING_WALK_MI = 0.5;
+const BOOKING_RIDE_MI = 1.5;
 
 // Words that don't tell two kinds of place apart ("Modern Italian" is Italian).
 const GENERIC = new Set([
@@ -98,8 +102,13 @@ export function choose(rounds: Vetted[], shownElsewhere: Set<string> = new Set()
  * unverifiable and over-budget venues, places the rest on the map, and splits
  * them by distance from the night's area.
  */
-export async function vetOptions(options: Option[], trip: VetTrip): Promise<Vetted> {
-  const { area, rides } = trip;
+export async function vetOptions(
+  options: Option[],
+  trip: VetTrip,
+  /** Already confirmed and placed by Google: skip the website and map checks. */
+  opts: { preVerified?: boolean } = {},
+): Promise<Vetted> {
+  const { area, rides, booked } = trip;
   const levels = budgetLevels(trip).map((l) => BUDGETS.indexOf(l));
   const [low, high] = [Math.min(...levels), Math.max(...levels)];
 
@@ -114,10 +123,18 @@ export async function vetOptions(options: Option[], trip: VetTrip): Promise<Vett
     return true;
   });
 
-  const [{ center }, links, points] = await Promise.all([
-    areaContext(area),
-    checkLinks(affordable, area),
-    Promise.all(affordable.map((o) => locateVenue(o.name, o.address, area))),
+  const none = { bad: [] as string[], closed: [] as string[], misplaced: [] as string[] };
+  const [center, links, points] = await Promise.all([
+    // Planned around a booking: distances count from the booking.
+    booked ? { lat: booked.lat, lng: booked.lng } : areaContext(area).then((c) => c.center),
+    opts.preVerified ? none : checkLinks(affordable, area),
+    Promise.all(
+      affordable.map((o) =>
+        opts.preVerified && o.lat !== undefined && o.lng !== undefined
+          ? { lat: o.lat, lng: o.lng }
+          : locateVenue(o.name, o.address, area),
+      ),
+    ),
   ]);
 
   const real: { i: number; option: Option; miles: number | null; cheaper: boolean }[] = [];
@@ -133,14 +150,17 @@ export async function vetOptions(options: Option[], trip: VetTrip): Promise<Vett
         return;
       }
       let option: Option = point ? { ...o, lat: point.lat, lng: point.lng } : { ...o };
-      if (links.bad.includes(o.name) || !o.url) {
-        // No working website: only keep it if the map knows a place by that name nearby.
+      if (!opts.preVerified && (links.bad.includes(o.name) || !o.url)) {
+        // No working website: only keep it if the map knows a place by that name nearby,
+        // and link to it on Google Maps rather than a broken site.
         const near = point ?? center;
         if (!near || !(await onMapNear(o.name, near))) {
           dropped.push({ name: o.name, reason: "unverified" });
           return;
         }
-        option = { ...option, url: "" };
+        option = { ...option, url: mapsSearchUrl(o.name, o.address), linkKind: "maps" };
+      } else if (option.url) {
+        option = { ...option, url: cleanUrl(option.url), linkKind: option.linkKind ?? linkKindOf(option.url) };
       }
       const level = priceLevel(o.price);
       real.push({
@@ -154,7 +174,7 @@ export async function vetOptions(options: Option[], trip: VetTrip): Promise<Vett
   // The checks finish in any order; restore Claude's order so ties keep it.
   real.sort((a, b) => a.i - b.i);
 
-  const limit = rides ? RIDE_RADIUS_MI : WALK_RADIUS_MI;
+  const limit = booked ? (rides ? BOOKING_RIDE_MI : BOOKING_WALK_MI) : rides ? RIDE_RADIUS_MI : WALK_RADIUS_MI;
   const byDistance = (a: { miles: number | null }, b: { miles: number | null }) =>
     (a.miles ?? Infinity) - (b.miles ?? Infinity);
   const close = real.filter((r) => r.miles !== null && r.miles <= limit).sort(byDistance);

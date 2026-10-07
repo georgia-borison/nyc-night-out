@@ -3,7 +3,7 @@
 import { useMemo, useState, type CSSProperties } from "react";
 import dynamic from "next/dynamic";
 import { budgetLabel, type Itinerary, type ItineraryStop, type Trip } from "@/lib/schema";
-import { KIND_STYLE, mapsRouteUrl, mapsSearchUrl, pieceKind, searchUrl, transitIcon } from "@/lib/planStyle";
+import { KIND_STYLE, linkLabel, mapsRouteUrl, mapsSearchUrl, pieceKind, searchUrl, transitIcon } from "@/lib/planStyle";
 import type { MapStop } from "./PlanMap";
 
 // Leaflet needs the browser, so the map never renders on the server.
@@ -170,6 +170,11 @@ export function NightPlan({ itinerary, trip }: { itinerary: Itinerary; trip: Tri
                   <div className="min-w-0 flex-1">
                     <p className="text-xs font-semibold uppercase tracking-wider" style={{ color }}>
                       {emoji} {stop.piece}
+                      {stop.booked && (
+                        <span className="ml-2 rounded-full bg-accent px-2 py-0.5 normal-case tracking-normal text-accent-ink">
+                          ✓ Booked
+                        </span>
+                      )}
                     </p>
                     <h3 className="mt-1 font-display text-2xl leading-tight">{stop.name}</h3>
                     <p className="mt-0.5 text-xs text-muted">
@@ -184,7 +189,7 @@ export function NightPlan({ itinerary, trip }: { itinerary: Itinerary; trip: Tri
                         rel="noopener noreferrer"
                         className="rounded-full border border-line px-3 py-1 text-muted hover:border-muted hover:text-fg"
                       >
-                        {stop.url ? "Website ↗" : "Search ↗"}
+                        {linkLabel(stop)} ↗
                       </a>
                       <a
                         href={mapsSearchUrl(stop.name, stop.address)}

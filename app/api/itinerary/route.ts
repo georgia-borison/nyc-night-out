@@ -70,8 +70,14 @@ export async function POST(request: Request) {
     const unmatched = itinerary.stops.filter((_, i) => !matched[i]);
     const located = unmatched.length ? await geocodeStops(unmatched, trip.area) : [];
     const pinned = itinerary.stops.map((s, i) => matched[i] ?? located.shift() ?? s);
+    // Claude re-types each stop's link and address; use the checked ones from the picks instead.
+    const linked = pinned.map((s) => {
+      const pick = byName.get(s.name.trim().toLowerCase());
+      if (!pick) return s;
+      return { ...s, url: pick.url, linkKind: pick.linkKind, address: pick.address || s.address, booked: pick.booked };
+    });
 
-    const stops = await attachWalks(pinned);
+    const stops = await attachWalks(linked);
     console.log(`[itinerary] walks done at ${secs()}s (${unmatched.length} stops needed a lookup)`);
     return Response.json({ itinerary: { ...itinerary, stops, geoVersion: GEO_VERSION }, costUsd });
   } catch (err) {

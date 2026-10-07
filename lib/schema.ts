@@ -42,6 +42,23 @@ export function priceLevel(price: string): number | null {
   return Math.max(...runs.map((r) => r.length)) - 1;
 }
 
+export const LINK_KINDS = ["website", "instagram", "tickets", "maps"] as const;
+
+/** A place the person already has booked; the rest of the night is planned around it. */
+export const BookingSchema = z.object({
+  piece: z.enum(PIECE_IDS),
+  name: z.string().min(1).max(120),
+  address: z.string().max(200),
+  lat: z.number(),
+  lng: z.number(),
+  url: z.string().max(500),
+  linkKind: z.enum(LINK_KINDS).optional(),
+  /** "19:30", or empty if no set time. */
+  time: z.string().regex(/^(\d{2}:\d{2})?$/),
+  category: z.string().max(80),
+});
+export type Booking = z.infer<typeof BookingSchema>;
+
 export const TripSchema = z.object({
   area: z.string().min(1).max(120),
   vibe: z.string().max(1000).default(""),
@@ -56,6 +73,7 @@ export const TripSchema = z.object({
   activityTypes: z.array(z.string().max(60)).max(20).default([]),
   // OK with a quick cab or subway ride between stops (otherwise a walking night).
   rides: z.boolean().default(false),
+  booked: BookingSchema.optional(),
 });
 export type Trip = z.infer<typeof TripSchema>;
 
@@ -82,6 +100,10 @@ export const OptionSchema = z.object({
   // Filled in by the app in the background (not part of Claude's output).
   lat: z.number().optional(),
   lng: z.number().optional(),
+  /** What the link is, for its label ("Website", "Instagram"…). Missing on older options. */
+  linkKind: z.enum(LINK_KINDS).optional(),
+  /** The night was planned around this; it can't be swapped. */
+  booked: z.boolean().optional(),
 });
 export type Option = z.infer<typeof OptionSchema>;
 
@@ -137,6 +159,8 @@ export const ItineraryStopSchema = z.object({
   // Added by the server after geocoding; not part of Claude's output.
   lat: z.number().optional(),
   lng: z.number().optional(),
+  linkKind: z.enum(LINK_KINDS).optional(),
+  booked: z.boolean().optional(),
   // Real walk from the previous stop (lib/walk.ts).
   walk: z.object({ minutes: z.number(), miles: z.number(), estimated: z.boolean().optional() }).optional(),
 });

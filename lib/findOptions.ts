@@ -1,5 +1,6 @@
 import { askClaude } from "./claude";
-import { placesEnabled, placesFor, type Candidate } from "./places";
+import { lookupPlace, placesEnabled, placesFor, type Candidate } from "./places";
+import { checkListedSite, cleanUrl, linkKindOf } from "./verifyUrl";
 import { CANDIDATES, curatePrompt, searchesFor, sectionPrompt, type SectionRequest } from "./prompt";
 import {
   BUDGETS,
@@ -67,6 +68,13 @@ async function curate(req: SectionRequest, candidates: Candidate[]): Promise<{ v
   const [low, high] = [Math.min(...levels), Math.max(...levels)];
   const vetted: Vetted = { near: [], cheaper: [], unplaced: [], far: [], dropped: [] };
   const used = new Set<string>();
+  // Check the picked places' websites all at once (cached, so refreshes are instant).
+  const sites = new Map(
+    data.options.flatMap((p) => {
+      const c = candidates[p.number - 1];
+      return c ? [[c.id, limited(() => checkListedSite(c.url, c.name))] as const] : [];
+    }),
+  );
   for (const pick of data.options) {
     const c = candidates[pick.number - 1];
     if (!c || used.has(c.id)) continue;
@@ -88,7 +96,7 @@ async function curate(req: SectionRequest, candidates: Candidate[]): Promise<{ v
       why: pick.why,
       tip: pick.tip,
       when: pick.when || c.hours,
-      url: c.url,
+      ...(await linkFor(c, sites.get(c.id)!)),
       lat: c.lat,
       lng: c.lng,
     };
@@ -97,6 +105,66 @@ async function curate(req: SectionRequest, candidates: Candidate[]): Promise<{ v
     else vetted.near.push(option);
   }
   return { vetted, costUsd };
+}
+
+// At most this many website checks at once.
+const CHECKS_AT_ONCE = 8;
+let running = 0;
+const waiting: (() => void)[] = [];
+async function limited<T>(task: () => Promise<T>): Promise<T> {
+  if (running >= CHECKS_AT_ONCE) await new Promise<void>((r) => waiting.push(r));
+  running++;
+  try {
+    return await task();
+  } finally {
+    running--;
+    waiting.shift()?.();
+  }
+}
+
+/** The link to show: the venue's own site if it checks out, otherwise its Google Maps page. */
+async function linkFor(c: Candidate, siteOk: Promise<boolean>): Promise<Pick<Option, "url" | "linkKind">> {
+  if (c.url && (await siteOk)) return { url: cleanUrl(c.url), linkKind: linkKindOf(c.url) };
+  if (c.mapsUrl) return { url: cleanUrl(c.mapsUrl), linkKind: "maps" };
+  return { url: "" };
+}
+
+/**
+ * Claude's own suggestions (the backup path) checked against Google: a place
+ * Google doesn't have as operating is dropped (Mother of Pearl has closed), and
+ * one it does have gets Google's address, location and a checked link.
+ */
+async function confirmOnGoogle(options: Option[], req: SectionRequest): Promise<Vetted> {
+  const looked = await Promise.all(options.map((o) => lookupPlace(o.name, o.address, req.piece, req.date)));
+  const confirmed: Option[] = [];
+  const unknown: Option[] = [];
+  const dropped: Vetted["dropped"] = [];
+  await Promise.all(
+    options.map(async (o, i) => {
+      const c = looked[i];
+      if (c === null) {
+        dropped.push({ name: o.name, reason: "not on Google" });
+        return;
+      }
+      if (c === undefined) {
+        unknown.push(o);
+        return;
+      }
+      const link = await linkFor(c, limited(() => checkListedSite(c.url, c.name)));
+      confirmed[i] = { ...o, name: c.name, address: c.address, lat: c.lat, lng: c.lng, ...link };
+    }),
+  );
+  const [a, b] = await Promise.all([
+    vetOptions(confirmed.filter(Boolean), req, { preVerified: true }),
+    vetOptions(unknown, req),
+  ]);
+  return {
+    near: [...a.near, ...b.near],
+    cheaper: [...a.cheaper, ...b.cheaper],
+    unplaced: [...a.unplaced, ...b.unplaced],
+    far: [...a.far, ...b.far],
+    dropped: [...dropped, ...a.dropped, ...b.dropped],
+  };
 }
 
 /**
@@ -119,6 +187,8 @@ export async function findSection(
     console.warn(`[places] nothing found for ${req.piece} in ${req.area}; asking Claude instead`);
   }
   const found = await findOptions(req, opts);
-  const vetted = await vetOptions(found.options, req);
+  // Events are one-off happenings Google doesn't list, so only venues are confirmed there.
+  const vetted =
+    placesEnabled() && req.piece !== "events" ? await confirmOnGoogle(found.options, req) : await vetOptions(found.options, req);
   return { vetted, costUsd: found.costUsd, source: "claude", candidates: found.options.length };
 }

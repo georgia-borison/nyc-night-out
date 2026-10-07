@@ -6,6 +6,7 @@
 import { areaShape } from "./areaShape";
 import { areaContext } from "./geocode";
 import { BUDGETS, budgetLevels, type PieceId, type Trip } from "./schema";
+import { nameWords } from "./verifyUrl";
 import { milesBetween } from "./walk";
 import { WALK_RADIUS_MI } from "./vetOptions";
 
@@ -22,6 +23,8 @@ const FIELDS = [
   "places.rating",
   "places.userRatingCount",
   "places.websiteUri",
+  "places.googleMapsUri",
+  "places.primaryType",
   "places.regularOpeningHours",
 ].join(",");
 
@@ -30,6 +33,8 @@ const MIN_RATING = 4.1;
 const MIN_RATINGS = 40;
 // Areas without an outline: search this far around the center.
 const RIDE_RADIUS_MI = 1.5;
+// Around a booking on a walking night: about a 10-minute walk.
+const BOOKING_WALK_MI = 0.5;
 
 export function placesEnabled() {
   return !!process.env.GOOGLE_PLACES_API_KEY?.trim();
@@ -49,6 +54,8 @@ export type Candidate = {
   rating: number;
   ratings: number;
   url: string;
+  /** Google Maps page for this exact place: the fallback when the website doesn't check out. */
+  mapsUrl: string;
   /** Opening hours on the night's weekday, e.g. "5:00 PM – 2:00 AM". */
   hours: string;
   /** Outside the walkable area: only a fallback. */
@@ -67,6 +74,8 @@ type GooglePlace = {
   rating?: number;
   userRatingCount?: number;
   websiteUri?: string;
+  googleMapsUri?: string;
+  primaryType?: string;
   regularOpeningHours?: {
     weekdayDescriptions?: string[];
     periods?: { open: Time; close?: Time }[];
@@ -82,8 +91,8 @@ type Box = { south: number; west: number; north: number; east: number };
 const cache = new Map<string, { at: number; places: Promise<GooglePlace[]> }>();
 const CACHE_MS = 10 * 60 * 1000;
 
-function search(textQuery: string, box: Box, includedType?: string): Promise<GooglePlace[]> {
-  const key = JSON.stringify([textQuery, box, includedType]);
+function search(textQuery: string, box: Box, includedType?: string, pageSize = 20): Promise<GooglePlace[]> {
+  const key = JSON.stringify([textQuery, box, includedType, pageSize]);
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < CACHE_MS) return hit.places;
   const places = (async () => {
@@ -97,7 +106,7 @@ function search(textQuery: string, box: Box, includedType?: string): Promise<Goo
       body: JSON.stringify({
         textQuery,
         ...(includedType ? { includedType } : {}),
-        pageSize: 20,
+        pageSize,
         locationRestriction: {
           rectangle: {
             low: { latitude: box.south, longitude: box.west },
@@ -227,20 +236,23 @@ export async function placesFor(piece: PieceId, trip: Trip, exclude: string[] = 
   const queries = queriesFor(piece, trip);
   if (!queries.length) return [];
 
-  const shape = areaShape(trip.area);
-  const { center } = await areaContext(trip.area);
+  // Planned around a booking: search a short walk (or ride) from it instead of the neighborhood.
+  const booked = trip.booked;
+  const shape = booked ? null : areaShape(trip.area);
+  const center = booked ? { lat: booked.lat, lng: booked.lng } : (await areaContext(trip.area)).center;
   if (!shape && !center) return [];
-  const radius = trip.rides ? RIDE_RADIUS_MI : WALK_RADIUS_MI;
-  const box: Box = shape?.box ?? boxAround(center!, radius);
+  const radius = booked ? (trip.rides ? RIDE_RADIUS_MI : BOOKING_WALK_MI) : trip.rides ? RIDE_RADIUS_MI : WALK_RADIUS_MI;
+  // Around a booking, look a little wider so there are fallbacks if little is close.
+  const box: Box = shape?.box ?? boxAround(center!, booked ? radius * 1.6 : radius);
+  const near = booked ? `near ${booked.address || booked.name}` : `in ${trip.area}`;
 
-  const results = (await Promise.all(queries.map((x) => search(`${x.q} in ${trip.area}, New York, NY`, box, x.type)))).flat();
+  const results = (await Promise.all(queries.map((x) => search(`${x.q} ${near}, New York, NY`, box, x.type)))).flat();
 
   const levels = budgetLevels(trip).map((l) => BUDGETS.indexOf(l));
   const high = Math.max(...levels);
   const date = new Date(`${trip.date}T12:00:00`);
-  const [h, m] = trip.time.split(":").map(Number);
-  const target = h * 60 + m + OFFSET[piece];
-  const skip = new Set(exclude.map((n) => n.trim().toLowerCase()));
+  const target = targetMinutes(piece, trip);
+  const skip = new Set([...exclude, ...(booked ? [booked.name] : [])].map((n) => n.trim().toLowerCase()));
   const seen = new Set<string>();
 
   const out: Candidate[] = [];
@@ -260,23 +272,94 @@ export async function placesFor(piece: PieceId, trip: Trip, exclude: string[] = 
     // With a real outline, only places inside it count as in the area (630 Hudson St
     // is close to Chelsea's center but in the West Village); otherwise use the radius.
     const miles = center ? milesBetween(center, point) : Infinity;
-    const near = shape ? shape.contains(point) : miles <= radius;
-    out.push({
-      id: p.id,
-      name,
-      address: (p.formattedAddress ?? "").replace(/, (USA|United States)$/, ""),
-      ...point,
-      type: p.primaryTypeDisplayName?.text ?? "",
-      level: price.level,
-      priceText: price.text,
-      rating: p.rating ?? 0,
-      ratings: p.userRatingCount ?? 0,
-      url: p.websiteUri ?? "",
-      hours: hoursOn(p, date.getDay()),
-      far: !near,
-    });
+    const inArea = shape ? shape.contains(point) : miles <= radius;
+    out.push(toCandidate(p, piece, date.getDay(), !inArea));
   }
   return out;
+}
+
+function toCandidate(p: GooglePlace, piece: PieceId, day: number, far: boolean): Candidate {
+  const price = priceOf(p, piece);
+  return {
+    id: p.id,
+    name: p.displayName?.text?.trim() ?? "",
+    address: (p.formattedAddress ?? "").replace(/, (USA|United States)$/, ""),
+    lat: p.location!.latitude,
+    lng: p.location!.longitude,
+    type: p.primaryTypeDisplayName?.text ?? "",
+    level: price.level,
+    priceText: price.text,
+    rating: p.rating ?? 0,
+    ratings: p.userRatingCount ?? 0,
+    url: p.websiteUri ?? "",
+    mapsUrl: p.googleMapsUri ?? "",
+    hours: hoursOn(p, day),
+    far,
+  };
+}
+
+/**
+ * When each part of the night happens, in minutes after midnight. Normally
+ * counted from the night's start; with a timed booking, from the booking
+ * (drinks an hour before a 7:30 dinner, the show after it).
+ */
+export function targetMinutes(piece: PieceId, trip: Trip) {
+  const toMin = (t: string) => {
+    const [h, m] = t.split(":").map(Number);
+    return h * 60 + m;
+  };
+  if (trip.booked?.time) return toMin(trip.booked.time) + OFFSET[piece] - OFFSET[trip.booked.piece];
+  return toMin(trip.time) + OFFSET[piece];
+}
+
+// ---- Looking up one place by name ----
+
+const NYC_BOX: Box = { south: 40.49, west: -74.26, north: 40.92, east: -73.68 };
+
+/** Whether Google's name is this venue: most of our words, or all of Google's ("Awash" for "Awash Ethiopian Restaurant"). */
+function sameName(ours: string, theirs: string) {
+  const a = nameWords(ours);
+  const b = nameWords(theirs);
+  if (!a.length || !b.length) return false;
+  const covered = a.filter((w) => b.includes(w)).length;
+  return covered >= Math.ceil((a.length * 2) / 3) || b.every((w) => a.includes(w));
+}
+
+/**
+ * Google's operating place for a venue Claude suggested, matched by name near
+ * its address. Null if Google has no such place (it may be closed or made
+ * up); undefined if Google couldn't be asked, so the caller keeps the option.
+ */
+export async function lookupPlace(name: string, address: string, piece: PieceId, date: string): Promise<Candidate | null | undefined> {
+  if (!placesEnabled()) return undefined;
+  const results = await search(`${name}, ${address || "New York, NY"}`, NYC_BOX, undefined, 5);
+  if (!results.length) return undefined;
+  const match = results.find((p) => p.businessStatus === "OPERATIONAL" && p.location && sameName(name, p.displayName?.text ?? ""));
+  return match ? toCandidate(match, piece, new Date(`${date}T12:00:00`).getDay(), false) : null;
+}
+
+export type VenueMatch = Pick<Candidate, "name" | "address" | "lat" | "lng" | "url" | "mapsUrl" | "type"> & {
+  /** Which part of the night this kind of place usually is. */
+  piece: PieceId;
+};
+
+/** Operating places matching what someone typed, for picking their booking. */
+export async function findVenues(query: string): Promise<VenueMatch[]> {
+  const results = await search(`${query}, New York, NY`, NYC_BOX, undefined, 6);
+  return results
+    .filter((p) => p.businessStatus === "OPERATIONAL" && p.location && p.displayName?.text)
+    .slice(0, 5)
+    .map((p) => {
+      const c = toCandidate(p, "dinner", new Date().getDay(), false);
+      return { name: c.name, address: c.address, lat: c.lat, lng: c.lng, url: c.url, mapsUrl: c.mapsUrl, type: c.type, piece: pieceForType(p.primaryType ?? "") };
+    });
+}
+
+function pieceForType(type: string): PieceId {
+  if (/night_club/.test(type)) return "dancing";
+  if (/bar|pub|wine|brewery|lounge/.test(type)) return "post_drinks";
+  if (/restaurant|food|cafe|bistro|steak|diner|eatery/.test(type)) return "dinner";
+  return "activity";
 }
 
 function boxAround(c: { lat: number; lng: number }, miles: number): Box {

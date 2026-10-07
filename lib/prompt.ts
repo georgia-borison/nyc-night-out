@@ -1,5 +1,5 @@
 import { areaInfo } from "./neighborhoods";
-import type { Candidate } from "./places";
+import { targetMinutes, type Candidate } from "./places";
 import {
   BUDGETS,
   budgetLabel,
@@ -104,14 +104,32 @@ function tripLines(trip: Trip, piece?: PieceId) {
   if (trip.cuisines.length) lines.push(`Cuisines they're interested in: ${trip.cuisines.join(", ")}`);
   if (trip.barTypes.length) lines.push(`Bar styles they like: ${trip.barTypes.join(", ")}`);
   if (trip.activityTypes.length) lines.push(`Activities they like: ${trip.activityTypes.join(", ")}`);
+  const booked = trip.booked;
+  if (booked) {
+    // Planned around a booking: it's fixed, and everything else is near it.
+    const when = booked.time ? ` at ${formatTime(booked.time)}` : "";
+    lines.push(
+      `Already booked (fixed, don't change it): ${pieceLabel(booked.piece)} at ${booked.name}, ${booked.address}${when}.`,
+      trip.rides
+        ? `Getting around: short rides are OK. Keep every other stop within about a 15-minute cab or subway ride of ${booked.name}, closer is better. When a hop is needed, say which train or suggest a cab in the tip.`
+        : `Getting around: a walking night. Keep every other stop within about a 10-minute walk of ${booked.name} (${booked.address}).`,
+    );
+  }
+  if (piece) lines.push(`This part of the night happens around: ${formatTime(clockOf(targetMinutes(piece, trip)))}`);
   const info = areaInfo(trip.area);
-  if (info) lines.push(`Area boundaries: ${info.bounds}`);
-  lines.push(
+  if (info && !booked) lines.push(`Area boundaries: ${info.bounds}`);
+  if (!booked) lines.push(
     trip.rides
       ? "Getting around: short rides are OK. Options can be anywhere in the area, and cab or subway hops of up to about 15 minutes between stops are fine. When a hop is needed, say which train or suggest a cab in the tip."
       : "Getting around: a walking night. Every option's address must be inside the area boundaries above, or at most a few blocks past them. Favor places within 10-15 minutes' walk of each other so the whole night works on foot. Before submitting, check each address against the boundaries and swap out anything that's outside.",
   );
   return lines.join("\n");
+}
+
+/** Minutes after midnight (possibly past 24h) to "HH:MM". */
+function clockOf(minutes: number) {
+  const m = ((Math.round(minutes) % 1440) + 1440) % 1440;
+  return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 }
 
 function today() {
@@ -254,7 +272,7 @@ export function itineraryPrompt(trip: Trip, picks: Pick[]) {
   const stops = picks
     .map(
       (p, i) =>
-        `${i + 1}. [${pieceLabel(p.piece)}] ${p.name} (${p.category}), ${p.address || p.neighborhood}. When: ${p.when || "n/a"}. Tip: ${p.tip}. URL: ${p.url}`,
+        `${i + 1}. [${pieceLabel(p.piece)}]${p.booked ? ` (ALREADY BOOKED${trip.booked?.time ? ` for ${formatTime(trip.booked.time)}, a fixed time` : ""})` : ""} ${p.name} (${p.category}), ${p.address || p.neighborhood}. When: ${p.when || "n/a"}. Tip: ${p.tip}. URL: ${p.url}`,
     )
     .join("\n");
   return `Turn these picks into a timed itinerary for the night.
@@ -264,7 +282,7 @@ ${tripLines(trip)}
 Picks:
 ${stops}
 ${distances.length ? `\nDistances between them (walking is roughly 20 minutes per mile):\n${distances.join("\n")}\n` : ""}
-Order the stops in a sensible sequence. Normally that's pre-drinks, dinner, then the activity or event (or the activity before dinner if its fixed showtime demands it), then post-dinner drinks, then dancing. Respect any fixed showtimes. Give realistic arrival times starting around ${formatTime(trip.time)} and how long to spend at each place, leaving enough time to get between stops given the distances. For getting_there, give practical advice on getting there from the previous stop (which way to walk, which subway line, or to grab a cab). Don't state walking minutes or distances; the app adds real walking times. Keep each stop's name, category, address and URL exactly as given.
+Order the stops in a sensible sequence. Normally that's pre-drinks, dinner, then the activity or event (or the activity before dinner if its fixed showtime demands it), then post-dinner drinks, then dancing. Respect any fixed showtimes, and keep an already-booked stop at exactly its booked time, fitting the other stops before and after it. Give realistic arrival times starting around ${formatTime(trip.time)} and how long to spend at each place, leaving enough time to get between stops given the distances. For getting_there, give practical advice on getting there from the previous stop (which way to walk, which subway line, or to grab a cab). Don't state walking minutes or distances; the app adds real walking times. Keep each stop's name, category, address and URL exactly as given.
 
 Give the night a playful 2-6 word title that riffs on the vibe, the weather or the neighborhood (like "Rain Check? Never." or "Uptown Low & Slow"), plus a one-line tagline. The title must never be empty.
 

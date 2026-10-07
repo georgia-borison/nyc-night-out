@@ -11,6 +11,7 @@ import {
   PIECES,
   budgetLabel,
   budgetLevels,
+  type Booking,
   type Budget,
   type Itinerary,
   type NightEvent,
@@ -22,6 +23,7 @@ import { milesBetween } from "@/lib/walk";
 import dynamic from "next/dynamic";
 import { Chip, ChipGroup, ChipRow, ErrorBox, GhostButton, PrimaryButton, Section, Switch } from "./ui";
 import { OptionCard, OptionSkeleton } from "./OptionCard";
+import { BookingPicker, type VenueResult } from "./BookingPicker";
 import { LoadingShow } from "./LoadingShow";
 import { NightPlan } from "./NightPlan";
 
@@ -50,6 +52,17 @@ const VIBE_IDEAS = [
   "Catching up with an old friend: great cocktails, no lines",
   "Big night out: dinner, a show, then dancing till late",
 ];
+
+// Roughly when each part of the night happens, in minutes after it starts (as in lib/places.ts).
+const BOOKING_OFFSET: Record<PieceId, number> = {
+  pre_drinks: 0, dinner: 60, activity: 150, events: 150, post_drinks: 210, dancing: 270,
+};
+
+/** "19:30" -> "7:30 PM" */
+function formatClock(t: string) {
+  const [h, m] = t.split(":").map(Number);
+  return `${((h + 11) % 12) + 1}:${String(m).padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}`;
+}
 
 function todayInNY() {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
@@ -87,6 +100,9 @@ export function Planner() {
   const [activityTypes, setActivityTypes] = useState<string[]>([]);
   // OK with a quick cab or subway ride between stops; otherwise a walking night.
   const [rides, setRides] = useState(false);
+  // A place already booked (e.g. a dinner reservation); the rest of the night is planned around it.
+  const [booked, setBooked] = useState<Booking | null>(null);
+  const [bookedAreas, setBookedAreas] = useState<VenueResult["areas"]>({ walk: null, ride: null });
   // Map lookups for picked venues, started the moment they're picked.
   const locating = useRef(new Map<string, Promise<{ lat: number; lng: number } | null>>());
   // Escape on the area map hands focus back to the list (the selected chip, else the first).
@@ -115,7 +131,65 @@ export function Planner() {
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  const trip: Trip = { area, vibe, date, time, partySize, budget, budgetTo, cuisines, barTypes, activityTypes, rides };
+  const trip: Trip = {
+    area, vibe, date, time, partySize, budget, budgetTo, cuisines, barTypes, activityTypes, rides,
+    booked: booked ?? undefined,
+  };
+
+  // ---- A booking sets the area and fixes one part of the night ----
+
+  const bookingArea = (areas: VenueResult["areas"], withRides: boolean, name: string) =>
+    (withRides ? areas.ride : areas.walk) ?? `Near ${name}`;
+
+  function pickBooking(v: VenueResult) {
+    const b: Booking = {
+      piece: v.piece, name: v.name, address: v.address, lat: v.lat, lng: v.lng,
+      url: v.url, linkKind: v.linkKind, time: "", category: v.type || "Booked",
+    };
+    setBooked(b);
+    setBookedAreas(v.areas);
+    setArea(bookingArea(v.areas, rides, v.name));
+    setPieces((ps) => (ps.includes(b.piece) ? ps : [...ps, b.piece]));
+  }
+
+  function changeBooking(next: Booking) {
+    setBooked(next);
+    setPieces((ps) => (ps.includes(next.piece) ? ps : [...ps, next.piece]));
+    // Start the night so the parts before the booking fit (an hour of drinks before a 7:30 dinner).
+    if (next.time) {
+      const [h, m] = next.time.split(":").map(Number);
+      const start = h * 60 + m - BOOKING_OFFSET[next.piece];
+      if (start >= 0) setTime(`${String(Math.floor(start / 60)).padStart(2, "0")}:${String(start % 60).padStart(2, "0")}`);
+    }
+  }
+
+  function removeBooking() {
+    setBooked(null);
+    setArea("");
+  }
+
+  /** Choosing a neighborhood instead means the night isn't centered on a booking any more. */
+  function selectArea(name: string) {
+    if (booked) setBooked(null);
+    setArea(name);
+  }
+
+  /** The booked part as an option: shown first and already picked. */
+  const bookedOption = (b: Booking): Option => ({
+    name: b.name,
+    category: b.category,
+    neighborhood: area,
+    address: b.address,
+    price: "",
+    why: "Your booking. Everything else is planned around it.",
+    tip: b.time ? `Booked for ${formatClock(b.time)}.` : "Already booked.",
+    when: "",
+    url: b.url,
+    linkKind: b.linkKind,
+    lat: b.lat,
+    lng: b.lng,
+    booked: true,
+  });
 
   // One tap picks a level. A second, different level makes a range; any tap on a range starts over.
   function pickBudget(b: Budget) {
@@ -131,6 +205,10 @@ export function Planner() {
 
   function toggleRides(next: boolean) {
     setRides(next);
+    if (booked) {
+      setArea(bookingArea(bookedAreas, next, booked.name));
+      return;
+    }
     const info = areaInfo(area);
     if (!info) return; // typed-in areas stay as they are
     // Rides on: a walkable part becomes its whole area. Rides off: a whole area must be narrowed down.
@@ -165,12 +243,12 @@ export function Planner() {
 
   // On a walking night, flag options that ended up well outside the chosen area.
   function walkNote(o: Option): string | undefined {
-    const center = areaInfo(area);
-    if (rides || !center || o.lat === undefined || o.lng === undefined) return undefined;
+    const center = booked ?? areaInfo(area);
+    if (rides || o.booked || !center || o.lat === undefined || o.lng === undefined) return undefined;
     // Straight-line distance, plus ~30% for the street grid, at 20 minutes a mile.
     const minutes = milesBetween(center, { lat: o.lat, lng: o.lng }) * 1.3 * 20;
     if (minutes <= 15) return undefined;
-    return `~${Math.round(minutes / 5) * 5} min walk from ${area}`;
+    return `~${Math.round(minutes / 5) * 5} min walk from ${booked ? booked.name : area}`;
   }
 
   const orderedPieces = PIECES.filter((p) => pieces.includes(p.id));
@@ -219,8 +297,16 @@ export function Planner() {
   }
 
   async function findOptions() {
-    setResults(Object.fromEntries(orderedPieces.map((p) => [p.id, { status: "loading", options: [], seen: [] }])));
-    setPicks({});
+    setResults(
+      Object.fromEntries(
+        orderedPieces.map((p) =>
+          booked?.piece === p.id
+            ? [p.id, { status: "done", options: [bookedOption(booked)], seen: [booked.name] }]
+            : [p.id, { status: "loading", options: [], seen: [] }],
+        ),
+      ),
+    );
+    setPicks(booked ? { [booked.piece]: bookedOption(booked) } : {});
     setItinerary(null);
     setSavedId(null);
     setSpent(0);
@@ -402,7 +488,14 @@ export function Planner() {
 
       {step === 0 && (
         <div className="space-y-8">
-          <Heading title="Where are you headed?" sub="Pick the neighborhood you'll be around tonight." />
+          <Heading title="Where are you headed?" sub="Pick the neighborhood you'll be around tonight, or start from a place you've already booked." />
+          <BookingPicker
+            booking={booked}
+            areaLabel={area}
+            onPick={pickBooking}
+            onChange={changeBooking}
+            onRemove={removeBooking}
+          />
           <Switch
             checked={rides}
             onChange={toggleRides}
@@ -429,7 +522,7 @@ export function Planner() {
                 selected={area}
                 hovered={hoveredArea}
                 rides={rides}
-                onSelect={setArea}
+                onSelect={selectArea}
                 onHover={setHoveredArea}
                 onEscape={focusAreaList}
               />
@@ -445,8 +538,8 @@ export function Planner() {
                   {b.areas.map((a) => (
                     <Chip
                       key={a.name}
-                      selected={area === a.name}
-                      onClick={() => setArea(a.name)}
+                      selected={!booked && area === a.name}
+                      onClick={() => selectArea(a.name)}
                       highlighted={hoveredArea === a.name}
                       onHoverChange={(on) => setHoveredArea((h) => (on ? a.name : h === a.name ? null : h))}
                     >
@@ -459,8 +552,8 @@ export function Planner() {
           </div>
           <Section title="Somewhere else" hint="Type a neighborhood, a cross street, or a venue you'll be near.">
             <input
-              value={isListedArea(area) ? "" : area}
-              onChange={(e) => setArea(e.target.value)}
+              value={isListedArea(area) || booked ? "" : area}
+              onChange={(e) => selectArea(e.target.value)}
               placeholder="e.g. near Barclays Center, or Surprise me — anywhere in Brooklyn"
               className="w-full rounded-xl border border-line bg-surface px-4 py-3 outline-none focus:border-accent"
             />
@@ -548,11 +641,12 @@ export function Planner() {
           <ChipRow label="Parts of the night" className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             {PIECES.map((p) => {
               const on = pieces.includes(p.id);
+              const isBooked = booked?.piece === p.id;
               return (
                 <button
                   key={p.id}
                   type="button"
-                  onClick={() => setPieces((ps) => toggle(ps, p.id))}
+                  onClick={() => !isBooked && setPieces((ps) => toggle(ps, p.id))}
                   aria-pressed={on}
                   className={`flex flex-col items-start gap-2 rounded-2xl border p-4 text-left transition ${
                     on ? "border-accent bg-accent-soft" : "border-line bg-surface hover:border-muted"
@@ -560,6 +654,7 @@ export function Planner() {
                 >
                   <span aria-hidden className="text-2xl">{p.emoji}</span>
                   <span className="font-medium">{p.label}</span>
+                  {isBooked && <span className="text-xs text-accent">Booked: {booked.name}</span>}
                 </button>
               );
             })}
@@ -598,7 +693,7 @@ export function Planner() {
       {step === 3 && (
         <div className="space-y-10">
           <Heading
-            title={`Your night in ${area}`}
+            title={booked ? `Your night around ${booked.name}` : `Your night in ${area}`}
             sub="Tap one option for each part of the night. We check that every spot is real, open, close by and on budget."
           />
           {anyLoading && (
@@ -613,7 +708,7 @@ export function Planner() {
                     <span className="mr-2">{p.emoji}</span>
                     {p.label}
                   </h2>
-                  {r?.status === "done" && (
+                  {r?.status === "done" && booked?.piece !== p.id && (
                     <button
                       type="button"
                       onClick={() => fetchPiece(p.id)}
@@ -646,6 +741,7 @@ export function Planner() {
                           selected={picks[p.id]?.name === o.name}
                           note={walkNote(o)}
                           onSelect={() =>
+                            !o.booked &&
                             setPicks((cur) => {
                               const unpick = cur[p.id]?.name === o.name;
                               if (!unpick) locate(o);

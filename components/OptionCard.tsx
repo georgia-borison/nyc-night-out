@@ -1,7 +1,7 @@
 "use client";
 
 import { useId } from "react";
-import { searchUrl } from "@/lib/planStyle";
+import { linkLabel, searchUrl } from "@/lib/planStyle";
 import type { Option } from "@/lib/schema";
 
 export function OptionCard({
@@ -54,6 +54,11 @@ export function OptionCard({
         </span>
 
         <span id={detailsId} className="flex flex-col gap-2">
+          {option.booked && (
+            <span className="w-fit rounded-full bg-accent px-2.5 py-0.5 text-[11px] font-semibold text-accent-ink">
+              ✓ Your booking
+            </span>
+          )}
           {note && (
             <span className="w-fit rounded-full bg-accent-soft px-2.5 py-0.5 text-[11px] font-medium text-accent">
               🚶 {note}
@@ -72,7 +77,7 @@ export function OptionCard({
           rel="noopener noreferrer"
           className="text-muted underline underline-offset-4 hover:text-fg"
         >
-          {option.url ? "Website ↗" : "Search ↗"}
+          {linkLabel(option)} ↗
           <span className="sr-only"> for {option.name} (opens in a new tab)</span>
         </a>
         {option.address && (
@@ -85,9 +90,11 @@ export function OptionCard({
             Map ↗<span className="sr-only"> for {option.name} (opens in a new tab)</span>
           </a>
         )}
-        <button type="button" onClick={onMoreLikeThis} className="ml-auto text-muted hover:text-accent">
-          More like this<span className="sr-only">: {option.name}</span>
-        </button>
+        {!option.booked && (
+          <button type="button" onClick={onMoreLikeThis} className="ml-auto text-muted hover:text-accent">
+            More like this<span className="sr-only">: {option.name}</span>
+          </button>
+        )}
       </div>
     </article>
   );

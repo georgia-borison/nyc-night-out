@@ -132,6 +132,18 @@ async function readText(res: Response) {
   return text;
 }
 
+/** The page's readable text: meta tags, title and body, decoded and normalized. */
+async function pageText(res: Response) {
+  const html = await readText(res);
+  const body = html.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ");
+  return normalize(decodeEntities(`${metaText(html)} ${body}`));
+}
+
+/** The host a request ended up on after redirects, without "www.". */
+function landedHost(res: Response, url: string) {
+  return new URL(res.url || url).hostname.replace(/^www\./, "");
+}
+
 async function check(url: string, name: string, address: string, places: string[]): Promise<LinkStatus> {
   let parsed: URL;
   try {
@@ -144,7 +156,6 @@ async function check(url: string, name: string, address: string, places: string[
   const words = nameWords(name);
   const host = parsed.hostname.replace(/^www\./, "");
   const slug = normalize(decodeURIComponent(parsed.pathname));
-  const compactHost = host.replace(/[^a-z0-9]/g, "");
 
   if (LISTING_HOSTS.some((h) => host === h || host.endsWith(`.${h}`))) {
     return namesVenue(words, (w) => slug.includes(w)) ? "ok" : "bad";
@@ -165,11 +176,12 @@ async function check(url: string, name: string, address: string, places: string[
   // (yunnankitchen.com), so the venue has to pass the map check instead.
   if (!res.ok) return "bad";
 
-  const html = await readText(res);
-  const body = html.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ");
-  const text = normalize(decodeEntities(`${metaText(html)} ${body}`));
-  // The site's own domain naming the venue counts too (script-built pages can be nearly empty).
-  const hostNames = namesVenue(words, (w) => compactHost.includes(w));
+  const text = await pageText(res);
+  // The site's own domain naming the venue counts too (script-built pages can be
+  // nearly empty). Judge the domain the link lands on, not the one it starts on:
+  // motherofpearlnyc.com now redirects to a gambling site.
+  const landed = landedHost(res, url);
+  const hostNames = namesVenue(words, (w) => landed.replace(/[^a-z0-9]/g, "").includes(w));
   if (!hostNames && !namesVenue(words, (w) => text.includes(w))) return "bad";
   if (CLOSED.test(text)) return "closed";
   // The site lists its address and it isn't the one Claude gave (The Flower
@@ -177,8 +189,7 @@ async function check(url: string, name: string, address: string, places: string[
   if (addressOnPage(text, address) === "mismatch") return "misplaced";
 
   // And it must be the New York one, not a namesake elsewhere.
-  const finalHost = new URL(res.url || url).hostname.replace(/^www\./, "").split(".")[0];
-  if (hostNames && LOCAL_HOST.test(finalHost)) return "ok";
+  if (hostNames && LOCAL_HOST.test(landed.split(".")[0])) return "ok";
   const where = [...PLACE_WORDS, streetWords(address), ...places.map(normalize).filter((p) => p.length > 3)];
   return where.some((p) => p && text.includes(p)) ? "ok" : "bad";
 }
@@ -231,4 +242,109 @@ export async function checkLinks(
     }),
   );
   return { bad, closed, misplaced };
+}
+
+// ---- Links from Google's listings ----
+
+export type LinkKind = "website" | "instagram" | "tickets" | "maps";
+
+const SOCIAL_HOSTS = ["instagram.com", "facebook.com", "linktr.ee", "tiktok.com"];
+const TICKET_HOSTS = [
+  "eventbrite.com", "dice.fm", "ticketmaster.com", "seetickets.us", "axs.com", "ticketweb.com", "showclix.com",
+  "tixr.com", "ra.co", "songkick.com", "etix.com", "venuepilot.co", "ticketleap.com",
+];
+// Online-ordering pages: a menu to order from, not the venue's site.
+const ORDERING_HOSTS = [
+  "toasttab.com", "chownow.com", "doordash.com", "grubhub.com", "seamless.com", "ubereats.com", "slicelife.com",
+  "menufy.com", "order.online", "beyondmenu.com", "clover.com", "spoton.com", "menupages.com", "allmenus.com",
+];
+
+const onHost = (host: string, list: string[]) => list.some((h) => host === h || host.endsWith(`.${h}`));
+const hostOf = (url: string) => {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "").toLowerCase();
+  } catch {
+    return "";
+  }
+};
+
+/** Drops tracking junk ("?utm_source=google&utm_medium=organic…") from a link. */
+export function cleanUrl(url: string) {
+  try {
+    const u = new URL(url);
+    for (const key of [...u.searchParams.keys()]) {
+      if (/^(utm_|gclid$|fbclid$|y_source$|ref$|g_mp$)/i.test(key)) u.searchParams.delete(key);
+    }
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
+
+/** What kind of page a link is, for its label on the card. */
+export function linkKindOf(url: string): LinkKind {
+  const host = hostOf(url);
+  if (onHost(host, ["instagram.com"])) return "instagram";
+  if (onHost(host, TICKET_HOSTS)) return "tickets";
+  if (onHost(host, ["google.com", "maps.google.com", "goo.gl"]) && /maps|cid=/.test(url)) return "maps";
+  return "website";
+}
+
+// Google adds the branch to chain names ("Mountain House East Village") that
+// the venue's own site doesn't repeat ("Szechuan Mountain House").
+const BRANCH_WORDS = new Set([
+  "east", "west", "north", "south", "upper", "lower", "side", "village", "midtown", "downtown", "uptown", "chelsea",
+  "soho", "noho", "nolita", "tribeca", "flatiron", "nomad", "gramercy", "murray", "hill", "harlem", "williamsburg",
+  "greenpoint", "bushwick", "astoria", "brooklyn", "manhattan", "queens", "bronx", "fidi", "seaport", "park", "slope",
+  "square", "union", "bryant", "times", "heights", "les", "ues", "uws", "hells", "kitchen", "city", "long", "island",
+]);
+function branchless(words: string[]) {
+  const core = words.filter((w) => !BRANCH_WORDS.has(w));
+  return core.length ? core : words;
+}
+
+const listedCache = new Map<string, Promise<boolean>>();
+
+/**
+ * Whether a website from Google's listing still works and is still the
+ * venue's. Google knows where the venue is, so unlike check() this doesn't
+ * look for an address; it catches dead sites, lapsed domains taken over by
+ * someone else, and ordering pages. Sites that block robots (403/429/503)
+ * are kept: they load fine in a browser (the Met, Gotham Comedy Club).
+ */
+export function checkListedSite(url: string, name: string): Promise<boolean> {
+  if (!url) return Promise.resolve(false);
+  const key = `${url}|${name}`;
+  let hit = listedCache.get(key);
+  if (!hit) {
+    hit = (async () => {
+      const host = hostOf(url);
+      if (!host || !/^https?:/i.test(url)) return false;
+      if (onHost(host, ORDERING_HOSTS)) return false;
+      if (onHost(host, SOCIAL_HOSTS)) return true; // they block robots; Google's link to them is fine
+      let res: Response;
+      try {
+        res = await fetch(url, {
+          redirect: "follow",
+          headers: { "User-Agent": USER_AGENT, Accept: "text/html" },
+          signal: AbortSignal.timeout(5000),
+        });
+      } catch {
+        return false; // DNS failure, timeout, bad TLS
+      }
+      if (res.status === 403 || res.status === 429 || res.status === 503) return true;
+      if (!res.ok) return false;
+      const landed = landedHost(res, url);
+      if (onHost(landed, ORDERING_HOSTS)) return false;
+      const words = branchless(nameWords(name));
+      const text = await pageText(res);
+      // Named by the page or by the domain it lands on (not the one it started on).
+      return (
+        namesVenue(words, (w) => text.includes(w)) ||
+        namesVenue(words, (w) => landed.replace(/[^a-z0-9]/g, "").includes(w))
+      );
+    })().catch(() => false);
+    listedCache.set(key, hit);
+  }
+  return hit;
 }

@@ -51,3 +51,9 @@ export function mapsRouteUrl(stops: { name: string; address: string }[]) {
   }
   return `https://www.google.com/maps/dir/?${params.toString()}`;
 }
+
+/** The label for a venue's link ("Website", "Instagram", "Tickets", "Google Maps"); "Search" when there's no link. */
+export function linkLabel(link: { url: string; linkKind?: "website" | "instagram" | "tickets" | "maps" }) {
+  if (!link.url) return "Search";
+  return { website: "Website", instagram: "Instagram", tickets: "Tickets", maps: "Google Maps" }[link.linkKind ?? "website"];
+}
