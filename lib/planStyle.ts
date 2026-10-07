@@ -79,7 +79,8 @@ export function reservationLabel(o: Reservable): string | null {
   if (r.policy === "walk_in") return "🚶 Walk-ins only";
   const on = r.platform ? ` · ${PLATFORM_NAMES[r.platform]}` : "";
   if (r.policy === "both") return `📅 Reserve or walk in${on}`;
-  return `📅 ${r.bookAhead ? "Book ahead" : "Reservations"}${on}`;
+  if (r.bookAhead) return `📅 Book ahead${on}`;
+  return r.platform ? `📅 Reservations${on}` : "📅 Takes reservations · call or check their site";
 }
 
 /** Adds query parameters to a link that may already have some. */
@@ -90,37 +91,29 @@ function withParams(url: string, params: Record<string, string>) {
 }
 
 /**
- * A link that opens the place's booking page with the night's date, time and
- * party size filled in where the platform allows. Resy and OpenTable search
- * pages take the restaurant's name, so they work even without its exact page.
- * Null for walk-in-only places, or when there's nowhere to book.
+ * A link that books the place, only when we've confirmed where: its own
+ * booking page on Resy/OpenTable/Tock/SevenRooms (with the night's date, time
+ * and party size filled in where the platform allows), or its website when
+ * that site has a booking widget. Null otherwise: a guessed link that leads
+ * nowhere (a platform the place isn't on, a site with no way to book) is worse
+ * than none.
  */
 export function reserveLink(
   o: Reservable,
   when: { date: string; time: string; partySize: number },
 ): { href: string; label: string } | null {
   const r = o.reservations;
-  if (!r || r.policy === "walk_in") return null;
+  if (!r || r.policy === "walk_in" || !r.platform) return null;
   const { date, time, partySize } = when;
   const n = String(partySize);
   try {
     switch (r.platform) {
       case "resy":
-        return {
-          label: "Reserve on Resy",
-          href: r.url
-            ? withParams(r.url, { date, seats: n })
-            : withParams("https://resy.com/cities/new-york-ny/search", { date, seats: n, query: o.name }),
-        };
+        if (r.url) return { label: "Reserve on Resy", href: withParams(r.url, { date, seats: n }) };
+        break;
       case "opentable":
-        return {
-          label: "Reserve on OpenTable",
-          href: withParams(r.url ?? "https://www.opentable.com/s", {
-            dateTime: `${date}T${time}:00`,
-            covers: n,
-            ...(r.url ? {} : { term: o.name, metroId: "8" }),
-          }),
-        };
+        if (r.url) return { label: "Reserve on OpenTable", href: withParams(r.url, { dateTime: `${date}T${time}:00`, covers: n }) };
+        break;
       case "tock":
         if (r.url) return { label: "Reserve on Tock", href: withParams(`${r.url.replace(/\/$/, "")}/search`, { date, size: n, time }) };
         break;
@@ -131,7 +124,8 @@ export function reserveLink(
   } catch {
     // A malformed booking link: fall through to the venue's own site.
   }
-  // No booking page we can fill in: send them to the venue's site to book.
-  if (o.url && o.linkKind !== "maps") return { label: "Reserve on their site", href: o.url };
+  // The site books through a widget (Fig. 19's Resy button) but doesn't link to the
+  // booking page itself: send them to the site, where the Reserve button is.
+  if (o.url && o.linkKind === "website") return { label: `Reserve on their site (${PLATFORM_NAMES[r.platform]})`, href: o.url };
   return null;
 }

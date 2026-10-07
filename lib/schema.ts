@@ -270,7 +270,6 @@ export const PicksResultSchema = z.object({
       category: z.string(),
       price: z.string(),
       booking: z.enum(["walk_in_only", "reservations_recommended", "reservations_essential", "either"]),
-      platform: z.enum(["resy", "opentable", "tock", "sevenrooms", "other", "unknown"]),
       why: z.string(),
       tip: z.string(),
       when: z.string(),
@@ -288,7 +287,7 @@ export const PICKS_JSON_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["number", "category", "price", "booking", "platform", "why", "tip", "when"],
+        required: ["number", "category", "price", "booking", "why", "tip", "when"],
         properties: {
           number: { type: "integer", description: "The place's number in the list" },
           category: OPTION_JSON_SCHEMA.properties.category,
@@ -302,11 +301,6 @@ export const PICKS_JSON_SCHEMA = {
             enum: ["walk_in_only", "reservations_recommended", "reservations_essential", "either"],
             description:
               "How it takes guests: walk_in_only (no reservations), either (reservations taken, walk-ins easy), reservations_recommended (book or risk a wait), reservations_essential (books up days or weeks ahead, few walk-ins).",
-          },
-          platform: {
-            type: "string",
-            enum: ["resy", "opentable", "tock", "sevenrooms", "other", "unknown"],
-            description: "Where it takes reservations, if you know. 'unknown' if unsure.",
           },
           why: OPTION_JSON_SCHEMA.properties.why,
           tip: OPTION_JSON_SCHEMA.properties.tip,

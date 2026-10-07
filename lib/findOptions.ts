@@ -1,10 +1,9 @@
 import { askClaude } from "./claude";
 import { lookupPlace, placesEnabled, placesFor, type Candidate } from "./places";
 import { daysUntil } from "./timing";
-import { checkListedSite, cleanUrl, inspectListedSite, linkKindOf, type BookingLink, type BookingPlatform } from "./verifyUrl";
+import { checkListedSite, cleanUrl, inspectListedSite, linkKindOf, type BookingLink } from "./verifyUrl";
 import { CANDIDATES, curatePrompt, searchesFor, sectionPrompt, type SectionRequest } from "./prompt";
 import {
-  BOOKING_PLATFORMS,
   BUDGETS,
   OPTIONS_JSON_SCHEMA,
   OptionsResultSchema,
@@ -121,15 +120,16 @@ async function curate(req: SectionRequest, candidates: Candidate[]): Promise<{ v
 /**
  * How a place takes guests, from three sources: a booking link or widget on
  * its own website (most reliable), Google's "takes reservations", and what
- * Claude knows (walk-in only, hard to get, which platform).
+ * Claude knows (walk-in only, or hard to get). Only the website says where to
+ * book: Claude's guesses at the platform were often wrong (Fig. 19 isn't
+ * findable on Resy by name).
  */
 function reservationsFor(
-  pick: { booking: "walk_in_only" | "reservations_recommended" | "reservations_essential" | "either"; platform: string },
+  pick: { booking: "walk_in_only" | "reservations_recommended" | "reservations_essential" | "either" },
   c: Candidate,
   site: BookingLink | undefined,
 ): Reservations | undefined {
-  const known = (BOOKING_PLATFORMS as readonly string[]).includes(pick.platform) ? (pick.platform as BookingPlatform) : undefined;
-  const platform = site?.platform ?? known;
+  const platform = site?.platform;
   const takesBookings = !!site || c.reservable === true || pick.booking !== "walk_in_only";
   if (!takesBookings) return { policy: "walk_in" };
   // Claude says walk-in only, but the site or Google shows bookings: both work.

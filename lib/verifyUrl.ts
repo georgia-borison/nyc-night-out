@@ -343,6 +343,38 @@ function bookingOn(html: string): BookingLink | undefined {
   return undefined;
 }
 
+/**
+ * Many sites keep the booking widget on their own "Reservations" page rather
+ * than the homepage. Follow the first such link on the same site and look there.
+ */
+async function bookingOnReservationsPage(html: string, pageUrl: string): Promise<BookingLink | undefined> {
+  const base = new URL(pageUrl);
+  const href = [...html.matchAll(/href=["']([^"'#]+)["']/gi)]
+    .map((m) => m[1])
+    .find((h) => /reserv|book-?a-?table|booking/i.test(h) && !/^(mailto|tel|javascript):/i.test(h));
+  if (!href) return undefined;
+  let target: URL;
+  try {
+    target = new URL(href, base);
+  } catch {
+    return undefined;
+  }
+  // A link straight to a booking platform is already the answer.
+  const direct = bookingFromUrl(target.toString());
+  if (direct) return direct;
+  if (target.hostname.replace(/^www\./, "") !== base.hostname.replace(/^www\./, "")) return undefined;
+  try {
+    const res = await fetch(target, {
+      redirect: "follow",
+      headers: { "User-Agent": USER_AGENT, Accept: "text/html" },
+      signal: AbortSignal.timeout(4000),
+    });
+    return res.ok ? bookingOn(await readText(res)) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** A booking page given as the venue's website itself (Google sometimes lists the Resy page). */
 function bookingFromUrl(url: string): BookingLink | undefined {
   for (const [platform, re] of BOOKING_LINKS) if (re.test(url)) return { platform, url };
@@ -393,7 +425,8 @@ export function inspectListedSite(url: string, name: string): Promise<ListedSite
       const ok =
         namesVenue(words, (w) => text.includes(w)) ||
         namesVenue(words, (w) => landed.replace(/[^a-z0-9]/g, "").includes(w));
-      return ok ? { ok, booking: bookingOn(html) } : { ok };
+      if (!ok) return { ok };
+      return { ok, booking: bookingOn(html) ?? (await bookingOnReservationsPage(html, res.url || url)) };
     })().catch((): ListedSite => ({ ok: false }));
     listedCache.set(key, hit);
   }

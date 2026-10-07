@@ -249,7 +249,7 @@ ${candidates.map(candidateLine).join("\n")}
 
 Pick the ${n} best for this night, best first. Favor places that fit the vibe and the crowd described in your instructions over the highest ratings; skip chains, tourist traps and places that don't suit this part of the night. Prefer places inside the area over ones marked "a bit outside the area".
 
-For each pick give: its number, a specific category (the cuisine or bar style, e.g. "Sichuan" or "Natural wine bar"), your own honest price level for it (Google's often runs low for NYC; skip places you know are over the budget), how it takes guests ("booking") and where it takes reservations ("platform"), a one-sentence "why" under 20 words, a "tip" under 25 words, and "when" (the hours that matter tonight, from the list). Don't invent facts the list doesn't support and you aren't sure of.
+For each pick give: its number, a specific category (the cuisine or bar style, e.g. "Sichuan" or "Natural wine bar"), your own honest price level for it (Google's often runs low for NYC; skip places you know are over the budget), how it takes guests ("booking"), a one-sentence "why" under 20 words, a "tip" under 25 words, and "when" (the hours that matter tonight, from the list). Don't invent facts the list doesn't support and you aren't sure of.
 
 ${bookingLine(req.date, req.partySize)}`;
   const others = req.otherPieces.filter((p) => p !== req.piece);
