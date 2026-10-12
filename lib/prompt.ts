@@ -42,7 +42,7 @@ const PIECE_GUIDANCE: Record<PieceId, string> = {
   dinner:
     "Restaurants for a proper sit-down dinner, open for dinner at the time they'll arrive. No wine bars, snack-only spots, or delis and brunch places that close in the afternoon. Note in the tip whether reservations are needed or it's walk-in, and one dish to order.",
   activity:
-    "Something to do: comedy, live music or jazz sets, theater or off-Broadway, museum late hours, gallery openings, indie cinema, bowling, karaoke, games, classes, etc. Include the show or session time in 'when' if it's scheduled.",
+    "Something to do: comedy, live music or jazz sets, theater or off-Broadway, museum late hours, gallery openings, indie cinema, bowling, karaoke, games, classes, etc. It must be an actual show or activity, not a bar or lounge whose main draw is the drinks (a music venue that serves drinks is fine; a cocktail bar with a playlist isn't). Include the show or session time in 'when' if it's scheduled.",
   events:
     "Specific events happening on this date: pop-ups, concerts, DJ nights, readings, markets, festivals, special screenings, parties. Each must have a confirmed date and time in 'when' and a ticket or info link.",
   post_drinks:

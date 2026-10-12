@@ -97,6 +97,8 @@ function sensible(order: OrderStop[]) {
     if (dinner >= 0 && place === "before" && i > dinner) return false;
     if (dinner >= 0 && place === "after" && i < dinner) return false;
   }
+  // Pre-dinner drinks lead straight into dinner; a show goes before them or after dinner.
+  if (dinner >= 0 && at("pre_drinks") >= 0 && at("pre_drinks") !== dinner - 1) return false;
   // With no dinner, pre-drinks still come before a nightcap.
   const pre = at("pre_drinks");
   const post = at("post_drinks");
@@ -122,14 +124,17 @@ export function routeMiles(order: OrderStop[]) {
 
 /**
  * The sensible order of a night's stops with the least walking: pre-drinks
- * before dinner, a nightcap after, dancing last, and a show or event before or
- * after dinner, whichever saves the walk (SoHo stops 1 and 3 next door and 2
- * across town become 1, 3, 2). Ties keep the given order. Stops without a
- * location don't add distance.
+ * straight before dinner, a nightcap after, dancing last, and a show or event
+ * before the drinks or after dinner, whichever saves the walk. The usual order
+ * (drinks, dinner, show, nightcap) wins unless switching saves about 6 minutes
+ * on foot. Stops without a location don't add distance.
  */
 export function bestOrder<T extends OrderStop>(stops: T[]): { order: T[]; miles: number } {
-  let best: T[] = stops;
-  let bestMiles = sensible(stops) ? routeMiles(stops) : Infinity;
+  // The usual order: drinks, dinner, show, nightcap, dancing.
+  const usual = [...stops].sort((a, b) => USUAL.indexOf(a.piece) - USUAL.indexOf(b.piece));
+  let best: T[] = usual;
+  let bestMiles = sensible(usual) ? routeMiles(usual) : Infinity;
+  const usualMiles = bestMiles;
   for (const order of permutations(stops)) {
     if (!sensible(order)) continue;
     const miles = routeMiles(order);
@@ -138,5 +143,10 @@ export function bestOrder<T extends OrderStop>(stops: T[]): { order: T[]; miles:
       bestMiles = miles;
     }
   }
+  // Only stray from the usual order when it saves a real walk (~6 minutes).
+  if (usualMiles !== Infinity && usualMiles - bestMiles < WORTH_REORDERING_MI) return { order: usual, miles: usualMiles };
   return { order: best, miles: bestMiles === Infinity ? routeMiles(stops) : bestMiles };
 }
+
+const USUAL = ["pre_drinks", "dinner", "activity", "events", "post_drinks", "dancing"];
+const WORTH_REORDERING_MI = 0.25;

@@ -2,7 +2,7 @@ import { askClaude, errorResponse, quickTitle } from "@/lib/claude";
 import { GEO_VERSION, geocodeStops, locateVenue } from "@/lib/geocode";
 import { templateTitle } from "@/lib/planTitle";
 import { itineraryPrompt } from "@/lib/prompt";
-import { ITINERARY_JSON_SCHEMA, ItineraryRequestSchema, ItinerarySchema, type Pick } from "@/lib/schema";
+import { ITINERARY_JSON_SCHEMA, ItineraryRequestSchema, ItinerarySchema, pieceLabel, type Pick } from "@/lib/schema";
 import { attachWalks, bestOrder } from "@/lib/walk";
 
 export const maxDuration = 300;
@@ -64,21 +64,32 @@ export async function POST(request: Request) {
       costUsd += fallback?.costUsd ?? 0;
     }
 
-    // Reuse the picks' coordinates (matched by name); only unmatched stops get looked up.
-    const byName = new Map(picks.map((p) => [p.name.trim().toLowerCase(), p]));
-    const matched = itinerary.stops.map((s) => {
-      const pick = byName.get(s.name.trim().toLowerCase());
+    // Each stop is one of the picks. Match by name, allowing for Claude shortening
+    // it ("Loulou" for "Live at Loulou"), then by position as a last resort.
+    const norm = (n: string) => n.toLowerCase().normalize("NFD").replace(/[^a-z0-9]+/g, " ").trim();
+    const pickFor = (s: { name: string }, i: number) =>
+      picks.find((p) => norm(p.name) === norm(s.name)) ??
+      picks.find((p) => norm(p.name).includes(norm(s.name)) || norm(s.name).includes(norm(p.name))) ??
+      (itinerary.stops.length === ordered.length ? ordered[i] : undefined);
+    const stopPicks = itinerary.stops.map((s, i) => pickFor(s, i));
+
+    // Reuse the picks' coordinates; only unmatched stops get looked up.
+    const matched = itinerary.stops.map((s, i) => {
+      const pick = stopPicks[i];
       return pick && pick.lat !== undefined && pick.lng !== undefined ? { ...s, lat: pick.lat, lng: pick.lng } : null;
     });
     const unmatched = itinerary.stops.filter((_, i) => !matched[i]);
     const located = unmatched.length ? await geocodeStops(unmatched, trip.area) : [];
     const pinned = itinerary.stops.map((s, i) => matched[i] ?? located.shift() ?? s);
-    // Claude re-types each stop's link and address; use the checked ones from the picks instead.
-    const linked = pinned.map((s) => {
-      const pick = byName.get(s.name.trim().toLowerCase());
+    // Claude re-types each stop's label, link and address; use the picks' instead.
+    // The label must be the part of the night they chose: an activity placed after
+    // dinner is still "Activity or show", even when the venue is bar-like.
+    const linked = pinned.map((s, i) => {
+      const pick = stopPicks[i];
       if (!pick) return s;
       return {
         ...s,
+        piece: pieceLabel(pick.piece),
         url: pick.url,
         linkKind: pick.linkKind,
         address: pick.address || s.address,
