@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Geist, Fraunces } from "next/font/google";
+import { Boldonse, Geist, Fraunces } from "next/font/google";
 import { HomeLink } from "@/components/HomeLink";
 import { Logo } from "@/components/Logo";
 import { CITY } from "@/lib/city";
@@ -9,6 +9,14 @@ import "./globals.css";
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
+});
+
+// The logo's face: bold, wide, poster-like capitals.
+const boldonse = Boldonse({
+  variable: "--font-boldonse",
+  subsets: ["latin"],
+  weight: "400",
+  display: "swap",
 });
 
 const fraunces = Fraunces({
@@ -24,14 +32,17 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${fraunces.variable} h-full antialiased`}>
+    <html lang="en" className={`${geistSans.variable} ${fraunces.variable} ${boldonse.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">
         <header className="mx-auto flex w-full max-w-5xl items-center justify-between px-4 py-5 sm:px-6">
           <HomeLink label={`Night Out ${CITY.short}, home`}>
             <Logo />
           </HomeLink>
           <nav className="text-sm text-muted">
-            <Link href="/plans" className="hover:text-fg">
+            <Link
+              href="/plans"
+              className="rounded-xl border border-line px-4 py-2 font-medium text-fg transition hover:border-accent hover:bg-accent-soft"
+            >
               My plans
             </Link>
           </nav>

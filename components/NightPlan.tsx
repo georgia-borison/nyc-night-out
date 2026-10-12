@@ -264,8 +264,11 @@ export function NightPlan({ itinerary, trip }: { itinerary: Itinerary; trip: Tri
 }
 
 const RIDE = /\b(cab|taxi|uber|lyft|train|subway|bus|ride|ferry)\b/i;
+// "about a 15-minute walk", "an easy 10 min stroll", "roughly 12–15 minutes on foot"
 const MINUTES =
-  /,?\s*(?:(?:about|around|roughly|only|just)\s+)?(?:an?\s+(?:easy|quick|short|brisk)\s+)?\d+\s*(?:(?:-|–|to)\s*\d+\s*)?-?\s*min(?:ute)?s?(?:\s+walk)?/gi;
+  /,?\s*(?:(?:about|around|roughly|only|just|approximately)\s+)?(?:an?\s+)?(?:(?:easy|quick|short|brisk|leisurely|pleasant|nice)\s+)?\d+\s*(?:(?:-|–|to)\s*\d+\s*)?-?\s*min(?:ute)?s?(?:\s+(?:walk|stroll|on foot))?/gi;
+// Words left hanging once the minutes are gone ("…toward Woodward Ave, about a.").
+const DANGLING = /,?\s*\b(?:(?:about|around|roughly|only|just|approximately)(?:\s+an?)?|an?)\s*(?=[.!?]?$)/i;
 
 /**
  * Removes Claude's guessed walking times ("about 12-15 minutes") once the real
@@ -278,7 +281,7 @@ function withoutGuessedMinutes(text: string) {
     .map((sentence) =>
       sentence
         .split(/(,\s*or\s+|;\s*)/)
-        .map((part) => (RIDE.test(part) ? part : part.replace(MINUTES, "")))
+        .map((part) => (RIDE.test(part) ? part : part.replace(MINUTES, "").replace(DANGLING, "")))
         .join(""),
     )
     .map((sentence) => sentence.replace(/\s+([.,!?])/g, "$1").replace(/,\s*\./g, ".").trim())

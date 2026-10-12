@@ -109,7 +109,7 @@ export function BookingPicker({
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="e.g. Mala Project"
+          placeholder={'e.g. "Mala Project"'}
           aria-label="Name of the place you've booked"
           className="min-w-0 flex-1 rounded-xl border border-line bg-surface px-4 py-3 outline-none focus:border-accent"
         />

@@ -175,7 +175,11 @@ export default function AreaMap({
       const area = ((layer as L.Path & { feature?: AreaFeature }).feature as AreaFeature | undefined)?.properties.area;
       if (!area) return;
       (layer as L.Path).setStyle(styleFor(area, selected, hovered));
-      if (area === selected || area === hovered) (layer as L.Path).bringToFront();
+      // Only the selection moves to the front. Moving the hovered shape re-inserts it
+      // under the pointer, so it never gets "mouseout" and its label stays up.
+      if (area === selected) (layer as L.Path).bringToFront();
+      // At most one label at a time: the shape under the pointer (or the chip hovered).
+      if (area !== hovered) layer.closeTooltip();
     });
   }, [selected, hovered, features]);
 
@@ -188,6 +192,8 @@ export default function AreaMap({
       onKeyDown={(e) => {
         if (e.key === "Escape") onEscape();
       }}
+      // Leaving the map clears the highlight and label even if a shape missed its "mouseout".
+      onMouseLeave={() => onHover(null)}
     >
       <MapContainer
         center={[40.74, -73.96]}

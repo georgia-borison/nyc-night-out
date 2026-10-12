@@ -67,7 +67,7 @@ async function curate(req: SectionRequest, candidates: Candidate[]): Promise<{ v
   });
 
   const levels = budgetLevels(req).map((l) => BUDGETS.indexOf(l));
-  const [low, high] = [Math.min(...levels), Math.max(...levels)];
+  const high = Math.max(...levels);
   const vetted: Vetted = { near: [], cheaper: [], unplaced: [], far: [], dropped: [] };
   const used = new Set<string>();
   const soon = daysUntil(req.date) <= 1;
@@ -111,7 +111,8 @@ async function curate(req: SectionRequest, candidates: Candidate[]): Promise<{ v
       reservations: reservationsFor(pick, c, site.booking),
     };
     if (c.far) vetted.far.push(option);
-    else if (level !== null && level < low) vetted.cheaper.push(option);
+    // Cheaper than every pick, or a level they skipped ($$ when they chose $ and $$$): a fallback.
+    else if (level !== null && !levels.includes(level)) vetted.cheaper.push(option);
     else vetted.near.push(option);
   }
   return { vetted, costUsd };

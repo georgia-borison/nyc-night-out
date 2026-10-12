@@ -19,17 +19,31 @@ export function pieceLabel(id: PieceId) {
 export const BUDGETS = ["$", "$$", "$$$", "$$$$"] as const;
 export type Budget = (typeof BUDGETS)[number];
 
-/** The budget levels a trip allows: one level, or every level in a range. */
-export function budgetLevels(trip: { budget: Budget; budgetTo?: Budget }): Budget[] {
+type BudgetChoice = { budget: Budget; budgetTo?: Budget; budgets?: Budget[] };
+
+/**
+ * The budget levels a trip allows, cheapest first: any set of levels picked
+ * ($ and $$$ without $$ is fine), or, for plans saved before that, one level
+ * or a range.
+ */
+export function budgetLevels(trip: BudgetChoice): Budget[] {
+  if (trip.budgets?.length) return BUDGETS.filter((b) => trip.budgets!.includes(b));
   const a = BUDGETS.indexOf(trip.budget);
   const b = trip.budgetTo ? BUDGETS.indexOf(trip.budgetTo) : a;
   return BUDGETS.slice(Math.min(a, b), Math.max(a, b) + 1);
 }
 
-/** "$$", or "$$–$$$" for a range. */
-export function budgetLabel(trip: { budget: Budget; budgetTo?: Budget }) {
+/** Whether the picked levels run without a gap ($–$$$ rather than $ and $$$). */
+export function budgetIsRange(trip: BudgetChoice) {
+  const idx = budgetLevels(trip).map((l) => BUDGETS.indexOf(l));
+  return idx[idx.length - 1] - idx[0] === idx.length - 1;
+}
+
+/** "$$", "$$–$$$" for neighboring levels, or "$ · $$$" for a mix. */
+export function budgetLabel(trip: BudgetChoice) {
   const levels = budgetLevels(trip);
-  return levels.length > 1 ? `${levels[0]}–${levels[levels.length - 1]}` : levels[0];
+  if (levels.length === 1) return levels[0];
+  return budgetIsRange(trip) ? `${levels[0]}–${levels[levels.length - 1]}` : levels.join(" · ");
 }
 
 /** An option's price as a budget level index (0-3), or null if it can't be read. "Free" counts as $. */
@@ -80,6 +94,8 @@ export const TripSchema = z.object({
   // The low end of the budget; budgetTo is the high end when a range was picked.
   budget: z.enum(BUDGETS),
   budgetTo: z.enum(BUDGETS).optional(),
+  // Every level picked, in any combination. Plans saved before this use budget/budgetTo.
+  budgets: z.array(z.enum(BUDGETS)).max(4).optional(),
   cuisines: z.array(z.string().max(60)).max(20).default([]),
   barTypes: z.array(z.string().max(60)).max(20).default([]),
   activityTypes: z.array(z.string().max(60)).max(20).default([]),

@@ -26,7 +26,7 @@ export type Vetted = {
 export const SHOW = 3;
 export const NOT_MUCH_NEARBY = "Not much nearby matches your filters, so these are the closest.";
 
-export type VetTrip = Pick<Trip, "area" | "rides" | "budget" | "budgetTo" | "booked">;
+export type VetTrip = Pick<Trip, "area" | "rides" | "budget" | "budgetTo" | "budgets" | "booked">;
 // Around a booking on a walking night: about a 10-minute walk.
 const BOOKING_WALK_MI = 0.5;
 const BOOKING_RIDE_MI = 1.5;
@@ -110,7 +110,7 @@ export async function vetOptions(
 ): Promise<Vetted> {
   const { area, rides, booked } = trip;
   const levels = budgetLevels(trip).map((l) => BUDGETS.indexOf(l));
-  const [low, high] = [Math.min(...levels), Math.max(...levels)];
+  const high = Math.max(...levels);
 
   const dropped: Vetted["dropped"] = [];
   // Over budget is decided from the price alone, so skip the slower checks for those.
@@ -167,7 +167,8 @@ export async function vetOptions(
         i,
         option,
         miles: point && center ? milesBetween(center, point) : null,
-        cheaper: level !== null && level < low,
+        // Cheaper than every pick, or a level they skipped: a fallback.
+        cheaper: level !== null && !levels.includes(level),
       });
     }),
   );

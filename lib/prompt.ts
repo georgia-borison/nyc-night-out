@@ -3,6 +3,7 @@ import type { Candidate } from "./places";
 import { clockOf, daysUntil, targetMinutes } from "./timing";
 import {
   BUDGETS,
+  budgetIsRange,
   budgetLabel,
   budgetLevels,
   pieceLabel,
@@ -86,10 +87,13 @@ function budgetLines(trip: Trip, piece?: PieceId) {
   const lines = priceTable(piece).map(
     ({ what, ranges }) => `  - For ${what}: ${idx.map((i) => `${BUDGETS[i]} = ${ranges[i]}`).join("; ")}`,
   );
+  const top = levels[levels.length - 1];
   const rule =
-    levels.length > 1
-      ? `Budget: ${budgetLabel(trip)} per person, a range. Spread the options across this range. Never go above ${levels[levels.length - 1]}.`
-      : `Budget: ${levels[0]} per person. Every option must be at this level. Never go above it, and only go one level below when nothing else fits.`;
+    levels.length === 1
+      ? `Budget: ${levels[0]} per person. Every option must be at this level. Never go above it, and only go one level below when nothing else fits.`
+      : budgetIsRange(trip)
+        ? `Budget: ${budgetLabel(trip)} per person, a range. Spread the options across this range. Never go above ${top}.`
+        : `Budget: ${levels.join(" or ")} per person (they skipped the levels in between). Every option must be at one of these levels, spread across them. Never go above ${top}.`;
   return [rule, ...lines];
 }
 

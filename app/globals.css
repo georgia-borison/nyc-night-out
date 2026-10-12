@@ -36,6 +36,7 @@
   --color-dance: var(--dance);
   --font-sans: var(--font-geist-sans);
   --font-display: var(--font-fraunces);
+  --font-logo: var(--font-boldonse);
 }
 
 html {

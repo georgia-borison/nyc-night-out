@@ -10,7 +10,6 @@ import {
   BUDGETS,
   PIECES,
   budgetLabel,
-  budgetLevels,
   type Booking,
   type Budget,
   type Itinerary,
@@ -83,10 +82,10 @@ export function Planner() {
   const [date, setDate] = useState(todayInNY);
   const [time, setTime] = useState("19:00");
   const [partySize, setPartySize] = useState(2);
-  const [budget, setBudget] = useState<Budget>("$$");
-  // The high end when a range is picked; unset means exactly one level.
-  const [budgetTo, setBudgetTo] = useState<Budget | undefined>();
-  const [pieces, setPieces] = useState<PieceId[]>(["pre_drinks", "dinner", "post_drinks"]);
+  // Every budget level picked, in any combination ($ and $$$ without $$ is fine).
+  const [budgets, setBudgets] = useState<Budget[]>(["$$"]);
+  const budget = budgets[0];
+  const [pieces, setPieces] = useState<PieceId[]>(["pre_drinks", "dinner", "activity"]);
   const [cuisines, setCuisines] = useState<string[]>([]);
   const [barTypes, setBarTypes] = useState<string[]>([]);
   const [activityTypes, setActivityTypes] = useState<string[]>([]);
@@ -124,7 +123,7 @@ export function Planner() {
   const [copied, setCopied] = useState(false);
 
   const trip: Trip = {
-    area, vibe, date, time, partySize, budget, budgetTo, cuisines, barTypes, activityTypes, rides,
+    area, vibe, date, time, partySize, budget, budgets, cuisines, barTypes, activityTypes, rides,
     booked: booked ?? undefined,
   };
 
@@ -183,16 +182,12 @@ export function Planner() {
     booked: true,
   });
 
-  // One tap picks a level. A second, different level makes a range; any tap on a range starts over.
-  function pickBudget(b: Budget) {
-    if (budgetTo === undefined && b !== budget) {
-      const [low, high] = [budget, b].sort((x, y) => BUDGETS.indexOf(x) - BUDGETS.indexOf(y));
-      setBudget(low);
-      setBudgetTo(high);
-    } else {
-      setBudget(b);
-      setBudgetTo(undefined);
-    }
+  // Each level toggles on its own; at least one stays picked.
+  function toggleBudget(b: Budget) {
+    setBudgets((cur) => {
+      const next = cur.includes(b) ? cur.filter((x) => x !== b) : [...cur, b];
+      return next.length ? BUDGETS.filter((x) => next.includes(x)) : cur;
+    });
   }
 
   function toggleRides(next: boolean) {
@@ -456,7 +451,7 @@ export function Planner() {
   const pickCount = orderedPieces.filter((p) => picks[p.id]).length;
   const anyLoading = orderedPieces.some((p) => results[p.id]?.status === "loading" || results[p.id]?.toppingUp);
   const phrases = useMemo(
-    () => searchPhrases({ area, budget: budgetLabel({ budget, budgetTo }), pieces, rides }),
+    () => searchPhrases({ area, budget: budgetLabel({ budget, budgets }), pieces, rides }),
     // A fresh shuffle for each search.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [waitStarted],
@@ -603,15 +598,11 @@ export function Planner() {
 
           <Section
             title="Budget"
-            hint={
-              budgetTo
-                ? `Per person, anywhere from ${budget} to ${budgetTo}. Tap one to pick just that level.`
-                : `Per person. Tap a second one for a range.`
-            }
+            hint="Per person. Pick as many as you like."
           >
             <ChipRow label="Budget">
               {BUDGETS.map((b) => (
-                <Chip key={b} selected={budgetLevels({ budget, budgetTo }).includes(b)} onClick={() => pickBudget(b)}>
+                <Chip key={b} selected={budgets.includes(b)} onClick={() => toggleBudget(b)}>
                   <span className="px-1 tracking-widest">{b}</span>
                 </Chip>
               ))}
@@ -805,10 +796,10 @@ export function Planner() {
 function Stepper({ step, onJump }: { step: number; onJump: (i: number) => void }) {
   return (
     <nav aria-label="Progress">
-      <ol className="flex gap-1.5">
+      <ol className="flex gap-2">
         {STEPS.map((s, i) => {
-          const bar = <span aria-hidden className={`block h-1 rounded-full ${i <= step ? "bg-accent" : "bg-line"}`} />;
-          const text = `mt-1.5 block text-xs ${i === step ? "font-medium text-fg" : i < step ? "text-muted" : "text-muted/60"}`;
+          const bar = <span aria-hidden className={`block h-1.5 rounded-full ${i <= step ? "bg-accent" : "bg-line"}`} />;
+          const text = `mt-2 block text-sm font-semibold ${i === step ? "text-fg" : i < step ? "text-accent" : "text-muted/60"}`;
           return (
             <li key={s} className="flex-1" aria-current={i === step ? "step" : undefined}>
               {i < step ? (
