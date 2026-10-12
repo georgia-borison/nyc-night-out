@@ -3,7 +3,7 @@ import { GEO_VERSION, geocodeStops, locateVenue } from "@/lib/geocode";
 import { templateTitle } from "@/lib/planTitle";
 import { itineraryPrompt } from "@/lib/prompt";
 import { ITINERARY_JSON_SCHEMA, ItineraryRequestSchema, ItinerarySchema, type Pick } from "@/lib/schema";
-import { attachWalks } from "@/lib/walk";
+import { attachWalks, bestOrder } from "@/lib/walk";
 
 export const maxDuration = 300;
 
@@ -32,11 +32,14 @@ export async function POST(request: Request) {
     }
   }
   if (picks.some((p, i) => p !== rawPicks[i])) console.log(`[itinerary] late lookups done at ${secs()}s`);
+  // The sensible order with the least walking (a show next to dinner goes right before or after it).
+  const { order: ordered, miles } = bestOrder(picks);
+  console.log(`[itinerary] order: ${ordered.map((p) => p.piece).join(" → ")} (~${miles.toFixed(2)} mi)`);
 
   try {
     const isFiller = (s = "") => !s.trim() || /^(placeholder|tbd|todo|\.\.\.)$/i.test(s.trim());
     const result = await askClaude({
-      prompt: itineraryPrompt(trip, picks),
+      prompt: itineraryPrompt(trip, ordered),
       schema: ItinerarySchema,
       jsonSchema: ITINERARY_JSON_SCHEMA,
       submitDescription: "Submit the final itinerary for the night.",

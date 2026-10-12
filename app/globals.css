@@ -17,13 +17,13 @@
   --dinner: #ff8a5b;
   --show: #4fd1c5;
   --dance: #ff6fb5;
-  /* "Roll the dice": casino crimson and gold, kept apart from the orange accent. */
-  --dice: #7a1424;
-  --dice-deep: #4a0b15;
-  --dice-gold: #f2c14e;
-  --dice-ink: #2a1a04;
-  --dice-text: #f8ece8;
-  --dice-muted: #ecc7cd;
+  /* "Roll the dice": muted wine and brass, kept apart from the orange accent. */
+  --dice: #3a1820;
+  --dice-deep: #2a1218;
+  --dice-gold: #cfae6d;
+  --dice-ink: #1f1608;
+  --dice-text: #f3ebe6;
+  --dice-muted: #cdb7ba;
 }
 
 @theme inline {
@@ -200,10 +200,10 @@ input[type="time"]::-webkit-calendar-picker-indicator {
 .dice-felt {
   background-color: var(--dice);
   background-image:
-    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.035) 0 1px, transparent 1px 14px),
-    repeating-linear-gradient(-45deg, rgba(255, 255, 255, 0.035) 0 1px, transparent 1px 14px),
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.02) 0 1px, transparent 1px 14px),
+    repeating-linear-gradient(-45deg, rgba(255, 255, 255, 0.02) 0 1px, transparent 1px 14px),
     linear-gradient(160deg, var(--dice) 0%, var(--dice-deep) 100%);
-  box-shadow: 0 0 0 1.5px var(--dice-gold), 0 10px 40px -12px rgba(242, 193, 78, 0.35);
+  border: 1px solid rgba(207, 174, 109, 0.5);
 }
 @keyframes dice-spin {
   0% { transform: rotate(-12deg); }

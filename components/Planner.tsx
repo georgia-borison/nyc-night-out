@@ -19,7 +19,7 @@ import {
   type PieceId,
   type Trip,
 } from "@/lib/schema";
-import { milesBetween } from "@/lib/walk";
+import { bestOrder, milesBetween } from "@/lib/walk";
 import dynamic from "next/dynamic";
 import Image from "next/image";
 import { Chip, ChipGroup, ChipRow, ErrorBox, GhostButton, PrimaryButton, Section, Switch } from "./ui";
@@ -46,12 +46,12 @@ const STEPS = ["Area", "Vibe", "Night", "Picks", "Plan"];
 
 // Photos behind the part-of-night buttons (credits in public/images/pieces/CREDITS.md).
 const PIECE_PHOTOS: Record<PieceId, string> = {
-  pre_drinks: "/images/pieces/pre-drinks.jpg",
-  dinner: "/images/pieces/dinner.jpg",
-  activity: "/images/pieces/activity.jpg",
+  pre_drinks: "/images/pieces/pre-drinks-2.jpg",
+  dinner: "/images/pieces/dinner-2.jpg",
+  activity: "/images/pieces/activity-2.jpg",
   events: "/images/pieces/events.jpg",
   post_drinks: "/images/pieces/post-drinks.png",
-  dancing: "/images/pieces/dancing.jpg",
+  dancing: "/images/pieces/dancing-2.jpg",
 };
 
 // Leaflet needs the browser, so the area map never renders on the server.
@@ -85,6 +85,27 @@ async function postJSON<T>(url: string, body: unknown): Promise<T> {
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error ?? `Request failed (${res.status})`);
   return data as T;
+}
+
+/**
+ * One option per part of the night, chosen so the stops are close together:
+ * every combination is scored by its walk in the best sensible order, and one
+ * is picked at random from those within about 15% of the shortest. Rolls stay
+ * varied without ever building a 40-minute zigzag when a 20-minute night exists.
+ */
+function closeTogether(
+  pieces: PieceId[],
+  found: Partial<Record<PieceId, Option[]>>,
+): Partial<Record<PieceId, Option>> {
+  const lists = pieces.flatMap((p) => ((found[p] ?? []).length ? [(found[p] ?? []).map((o) => ({ ...o, piece: p }))] : []));
+  if (!lists.length) return {};
+  let combos: (Option & { piece: PieceId })[][] = [[]];
+  for (const list of lists) combos = combos.flatMap((c) => list.map((o) => [...c, o]));
+  const scored = combos.map((c) => ({ c, miles: bestOrder(c).miles }));
+  const shortest = Math.min(...scored.map((x) => x.miles));
+  const good = scored.filter((x) => x.miles <= shortest * 1.15 + 0.05);
+  const pick = good[Math.floor(Math.random() * good.length)].c;
+  return Object.fromEntries(pick.map(({ piece, ...o }) => [piece, o]));
 }
 
 export function Planner() {
@@ -408,9 +429,9 @@ export function Planner() {
 
   /**
    * Roll the dice: a random neighborhood and mix of parts, searched and
-   * built straight into a plan. Picks one of the shown options per part at
-   * random, so rolling the same area twice still differs. "Change picks"
-   * then shows every option, to swap any stop.
+   * built straight into a plan. Picks a set of stops close to each other
+   * (see closeTogether), so rolling the same area twice still differs but
+   * never zigzags. "Change picks" then shows every option, to swap any stop.
    */
   async function rollTheDice() {
     const roll = rollNight({ noDrinks, recent: recentRolls() });
@@ -434,11 +455,7 @@ export function Planner() {
     try {
       const found = await findOptions(t, roll.pieces);
       if (!found) return;
-      const chosen: Partial<Record<PieceId, Option>> = {};
-      for (const p of roll.pieces) {
-        const options = found[p] ?? [];
-        if (options.length) chosen[p] = options[Math.floor(Math.random() * options.length)];
-      }
+      const chosen = closeTogether(roll.pieces, found);
       if (!Object.keys(chosen).length) return;
       setPicks(chosen);
       await buildItinerary(t, chosen, roll.pieces);
@@ -515,15 +532,32 @@ export function Planner() {
 
   // Sections search in parallel, so the same venue can come back twice.
   // Show each place only in the first section it appears in, unless it was picked there.
+  /** The nearest stop already picked in another part of the night, and the walk to it. */
+  function nearestPick(o: Option, piece: PieceId): { name: string; minutes: number } | null {
+    if (o.lat === undefined || o.lng === undefined) return null;
+    let best: { name: string; minutes: number } | null = null;
+    for (const p of orderedPieces) {
+      const pick = picks[p.id];
+      if (p.id === piece || !pick || pick.lat === undefined || pick.lng === undefined) continue;
+      // Straight-line distance, plus ~30% for the street grid, at 20 minutes a mile.
+      const minutes = milesBetween({ lat: o.lat, lng: o.lng }, { lat: pick.lat, lng: pick.lng }) * 1.3 * 20;
+      if (!best || minutes < best.minutes) best = { name: pick.name, minutes };
+    }
+    return best;
+  }
+
   const visibleOptions: Partial<Record<PieceId, Option[]>> = {};
   const shown = new Set<string>();
   for (const p of orderedPieces) {
-    visibleOptions[p.id] = (results[p.id]?.options ?? []).filter((o) => {
+    const options = (results[p.id]?.options ?? []).filter((o) => {
       const key = o.name.trim().toLowerCase();
       if (shown.has(key) && picks[p.id]?.name !== o.name) return false;
       shown.add(key);
       return true;
     });
+    // Once something is picked elsewhere, list the closest options to it first.
+    const dist = (o: Option) => nearestPick(o, p.id)?.minutes ?? Infinity;
+    visibleOptions[p.id] = options.some((o) => dist(o) !== Infinity) ? [...options].sort((a, b) => dist(a) - dist(b)) : options;
   }
 
   const pickCount = orderedPieces.filter((p) => picks[p.id]).length;
@@ -625,14 +659,6 @@ export function Planner() {
           </div>
           </div>
           <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
-            <Section title="Somewhere else" hint="Type a neighborhood, a cross street, or a venue you'll be near.">
-              <input
-                value={isListedArea(area) || booked ? "" : area}
-                onChange={(e) => selectArea(e.target.value)}
-                placeholder="e.g. near Barclays Center, or anywhere in Brooklyn"
-                className="w-full rounded-xl border border-line bg-surface px-4 py-3 outline-none focus:border-accent"
-              />
-            </Section>
             <RollTheDice
               budgets={budgets}
               onToggleBudget={toggleBudget}
@@ -645,6 +671,14 @@ export function Planner() {
               rolling={rolling}
               onRoll={rollTheDice}
             />
+            <Section title="Somewhere else" hint="Type a neighborhood, a cross street, or a venue you'll be near.">
+              <input
+                value={isListedArea(area) || booked ? "" : area}
+                onChange={(e) => selectArea(e.target.value)}
+                placeholder="e.g. near Barclays Center, or anywhere in Brooklyn"
+                className="w-full rounded-xl border border-line bg-surface px-4 py-3 outline-none focus:border-accent"
+              />
+            </Section>
           </div>
           <Nav onNext={() => setStep(1)} nextDisabled={!area.trim()} />
         </div>
@@ -728,7 +762,7 @@ export function Planner() {
                   onClick={() => !isBooked && setPieces((ps) => toggle(ps, p.id))}
                   aria-pressed={on}
                   className={`group relative isolate flex aspect-[4/3] flex-col justify-end overflow-hidden rounded-2xl p-4 text-left transition sm:aspect-auto sm:h-40 ${
-                    on ? "ring-[3px] ring-accent" : "ring-1 ring-line hover:ring-muted"
+                    on ? "ring-[3px] ring-accent shadow-[inset_0_0_0_2px_rgba(255,138,91,0.35)]" : "ring-1 ring-line hover:ring-muted"
                   }`}
                 >
                   {/* Decorative photo; the label below names the part. */}
@@ -738,19 +772,20 @@ export function Planner() {
                     fill
                     sizes="(min-width: 640px) 33vw, 50vw"
                     className={`-z-20 object-cover transition duration-300 ${
-                      on ? "brightness-100" : "brightness-[0.55] group-hover:brightness-75"
+                      on ? "brightness-100" : "brightness-[0.45] group-hover:brightness-75"
                     }`}
                   />
                   {/* Dark fade behind the text, so it stays readable on any photo. */}
                   <span aria-hidden className="absolute inset-0 -z-10 bg-gradient-to-t from-black/85 via-black/45 to-transparent" />
-                  {on && (
-                    <span
-                      aria-hidden
-                      className="absolute right-3 top-3 grid size-7 place-items-center rounded-full bg-accent text-sm font-bold text-accent-ink"
-                    >
-                      ✓
-                    </span>
-                  )}
+                  {/* On: a white disc with a dark check (readable on any photo). Off: an empty ring. */}
+                  <span
+                    aria-hidden
+                    className={`absolute right-3 top-3 grid size-8 place-items-center rounded-full text-base font-black shadow-[0_2px_8px_rgba(0,0,0,0.6)] ${
+                      on ? "bg-white text-black ring-2 ring-accent" : "border-2 border-white/80 bg-black/30"
+                    }`}
+                  >
+                    {on ? "✓" : ""}
+                  </span>
                   <span className="font-logo text-sm uppercase leading-tight tracking-[0.03em] text-white [text-shadow:0_1px_3px_rgba(0,0,0,0.6)] sm:text-lg">
                     {p.label}
                   </span>
@@ -843,6 +878,10 @@ export function Planner() {
                           option={o}
                           selected={picks[p.id]?.name === o.name}
                           note={walkNote(o)}
+                          nearNote={(() => {
+                            const near = nearestPick(o, p.id);
+                            return near && !o.booked ? `~${Math.max(1, Math.round(near.minutes))} min walk from ${near.name}` : undefined;
+                          })()}
                           reserveWhen={{ date, time: plannedClock(p.id, { ...trip, otherPieces: pieces }), partySize }}
                           onSelect={() =>
                             !o.booked &&

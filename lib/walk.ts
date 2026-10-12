@@ -72,3 +72,71 @@ export async function walkLegs(points: Point[]): Promise<Walk[]> {
   }
   return points.slice(1).map((p, i) => estimate(points[i], p));
 }
+
+// ---- The order with the least walking ----
+
+/** Where each part of the night may go relative to dinner: before, after, or either. */
+const PLACE: Record<string, "before" | "after" | "either" | "last"> = {
+  pre_drinks: "before",
+  dinner: "either",
+  activity: "either",
+  events: "either",
+  post_drinks: "after",
+  dancing: "last",
+};
+
+type OrderStop = { piece: string; lat?: number; lng?: number };
+
+/** Whether an order makes sense: drinks before dinner first, nightcap after it, dancing last. */
+function sensible(order: OrderStop[]) {
+  const at = (piece: string) => order.findIndex((s) => s.piece === piece);
+  const dinner = at("dinner");
+  for (let i = 0; i < order.length; i++) {
+    const place = PLACE[order[i].piece] ?? "either";
+    if (place === "last" && i !== order.length - 1) return false;
+    if (dinner >= 0 && place === "before" && i > dinner) return false;
+    if (dinner >= 0 && place === "after" && i < dinner) return false;
+  }
+  // With no dinner, pre-drinks still come before a nightcap.
+  const pre = at("pre_drinks");
+  const post = at("post_drinks");
+  return !(pre >= 0 && post >= 0 && pre > post);
+}
+
+function permutations<T>(items: T[]): T[][] {
+  if (items.length <= 1) return [items];
+  return items.flatMap((item, i) => permutations([...items.slice(0, i), ...items.slice(i + 1)]).map((rest) => [item, ...rest]));
+}
+
+/** Straight-line miles walked going through the stops in this order. */
+export function routeMiles(order: OrderStop[]) {
+  let miles = 0;
+  for (let i = 1; i < order.length; i++) {
+    const a = order[i - 1];
+    const b = order[i];
+    if (a.lat === undefined || a.lng === undefined || b.lat === undefined || b.lng === undefined) continue;
+    miles += milesBetween({ lat: a.lat, lng: a.lng }, { lat: b.lat, lng: b.lng });
+  }
+  return miles;
+}
+
+/**
+ * The sensible order of a night's stops with the least walking: pre-drinks
+ * before dinner, a nightcap after, dancing last, and a show or event before or
+ * after dinner, whichever saves the walk (SoHo stops 1 and 3 next door and 2
+ * across town become 1, 3, 2). Ties keep the given order. Stops without a
+ * location don't add distance.
+ */
+export function bestOrder<T extends OrderStop>(stops: T[]): { order: T[]; miles: number } {
+  let best: T[] = stops;
+  let bestMiles = sensible(stops) ? routeMiles(stops) : Infinity;
+  for (const order of permutations(stops)) {
+    if (!sensible(order)) continue;
+    const miles = routeMiles(order);
+    if (miles < bestMiles - 0.01) {
+      best = order;
+      bestMiles = miles;
+    }
+  }
+  return { order: best, miles: bestMiles === Infinity ? routeMiles(stops) : bestMiles };
+}

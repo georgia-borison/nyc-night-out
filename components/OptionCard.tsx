@@ -11,6 +11,7 @@ export function OptionCard({
   onSelect,
   onMoreLikeThis,
   note,
+  nearNote,
   reserveWhen,
 }: {
   option: Option;
@@ -19,6 +20,8 @@ export function OptionCard({
   onMoreLikeThis: () => void;
   /** e.g. "~25 min walk from UWS · 60s–70s" when it's outside a walking night's area. */
   note?: string;
+  /** e.g. "~6 min walk from Via Carota": the walk to the nearest stop already picked. */
+  nearNote?: string;
   /** The night's date, this part's planned time and the party size, for the Reserve button. */
   reserveWhen?: { date: string; time: string; partySize: number };
 }) {
@@ -68,6 +71,11 @@ export function OptionCard({
           {note && (
             <span className="w-fit rounded-full bg-accent-soft px-2.5 py-0.5 text-[11px] font-medium text-accent">
               🚶 {note}
+            </span>
+          )}
+          {nearNote && (
+            <span className="w-fit rounded-full bg-surface-2 px-2.5 py-0.5 text-[11px] font-medium text-fg">
+              📍 {nearNote}
             </span>
           )}
           <span className="block text-sm leading-relaxed">{option.why}</span>
