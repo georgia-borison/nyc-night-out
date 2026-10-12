@@ -1,6 +1,6 @@
 import { errorResponse } from "@/lib/claude";
 import { findSection } from "@/lib/findOptions";
-import { SuggestRequestSchema } from "@/lib/schema";
+import { BUDGETS, SuggestRequestSchema, budgetLevels } from "@/lib/schema";
 import { choose } from "@/lib/vetOptions";
 
 export const maxDuration = 300;
@@ -15,7 +15,8 @@ export async function POST(request: Request) {
 
   try {
     const { vetted, costUsd, source, candidates } = await findSection(parsed.data);
-    const { options, note } = choose([vetted]);
+    const levels = budgetLevels(parsed.data).map((l) => BUDGETS.indexOf(l));
+    const { options, note } = choose([vetted], new Set(), levels);
     const dropped = vetted.dropped.map((d) => `${d.name} (${d.reason})`).join(", ");
     console.log(
       `[suggest] ${parsed.data.piece}: ${candidates} candidates from ${source}, ${options.length} kept${dropped ? `; dropped ${dropped}` : ""}`,

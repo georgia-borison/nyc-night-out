@@ -58,3 +58,19 @@ export function itineraryPhrases() {
     "Drawing your route on the map…",
   ]);
 }
+
+/** Lines for a "Roll the dice" night: the neighborhood is a surprise until it lands. */
+export function dicePhrases(opts: { area: string }) {
+  const area = place(opts.area);
+  return shuffle([
+    "Shaking the dice…",
+    `The dice say ${area}. No take-backs…`,
+    "Spinning the wheel of neighborhoods…",
+    `Scouting ${area} for something you'd never pick yourself…`,
+    "Letting fate pick the cuisine…",
+    "Stacking the deck in your favor…",
+    "Placing a very confident bet on dinner…",
+    "Shuffling the city like a deck of cards…",
+    "Rolling for a hidden gem… natural 20…",
+  ]);
+}

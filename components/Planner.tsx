@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { itineraryPhrases, searchPhrases } from "@/lib/loadingPhrases";
+import { dicePhrases, itineraryPhrases, searchPhrases } from "@/lib/loadingPhrases";
+import { recentRolls, rememberRoll, rollNight } from "@/lib/dice";
 import Link from "next/link";
 import { rememberPlan } from "@/lib/myPlans";
 import { areaInfo, isListedArea, visibleAreas } from "@/lib/neighborhoods";
@@ -20,9 +21,11 @@ import {
 } from "@/lib/schema";
 import { milesBetween } from "@/lib/walk";
 import dynamic from "next/dynamic";
+import Image from "next/image";
 import { Chip, ChipGroup, ChipRow, ErrorBox, GhostButton, PrimaryButton, Section, Switch } from "./ui";
 import { OptionCard, OptionSkeleton } from "./OptionCard";
 import { BookingPicker, type VenueResult } from "./BookingPicker";
+import { RollTheDice } from "./RollTheDice";
 import { TimeSelect } from "./TimeSelect";
 import { OFFSET, clockLabel, plannedClock } from "@/lib/timing";
 import { LoadingShow } from "./LoadingShow";
@@ -40,6 +43,16 @@ type PieceResult = {
 };
 
 const STEPS = ["Area", "Vibe", "Night", "Picks", "Plan"];
+
+// Photos behind the part-of-night buttons (credits in public/images/pieces/CREDITS.md).
+const PIECE_PHOTOS: Record<PieceId, string> = {
+  pre_drinks: "/images/pieces/pre-drinks.jpg",
+  dinner: "/images/pieces/dinner.jpg",
+  activity: "/images/pieces/activity.jpg",
+  events: "/images/pieces/events.jpg",
+  post_drinks: "/images/pieces/post-drinks.png",
+  dancing: "/images/pieces/dancing.jpg",
+};
 
 // Leaflet needs the browser, so the area map never renders on the server.
 const AreaMap = dynamic(() => import("./AreaMap"), {
@@ -91,6 +104,10 @@ export function Planner() {
   const [activityTypes, setActivityTypes] = useState<string[]>([]);
   // OK with a quick cab or subway ride between stops; otherwise a walking night.
   const [rides, setRides] = useState(false);
+  // "Roll the dice": skip the bars, a roll in progress, and whether this night was rolled.
+  const [noDrinks, setNoDrinks] = useState(false);
+  const [rolling, setRolling] = useState(false);
+  const [rolled, setRolled] = useState(false);
   // A place already booked (e.g. a dinner reservation); the rest of the night is planned around it.
   const [booked, setBooked] = useState<Booking | null>(null);
   const [bookedAreas, setBookedAreas] = useState<VenueResult["areas"]>({ walk: null, ride: null });
@@ -207,12 +224,12 @@ export function Planner() {
 
   // Start the map lookup as soon as an option is picked, so building the
   // itinerary doesn't wait on it.
-  function locate(o: Option) {
+  function locate(o: Option, where: string = area) {
     const key = venueKey(o);
     if (locating.current.has(key)) return;
     locating.current.set(
       key,
-      postJSON<{ lat: number | null; lng: number | null }>("/api/locate", { name: o.name, address: o.address, area })
+      postJSON<{ lat: number | null; lng: number | null }>("/api/locate", { name: o.name, address: o.address, area: where })
         .then((r) => (r.lat !== null && r.lng !== null ? { lat: r.lat, lng: r.lng } : null))
         .catch(() => null),
     );
@@ -283,17 +300,26 @@ export function Planner() {
     }
   }
 
-  async function findOptions() {
+  /**
+   * Searches every part of the night (streaming each as it's ready). Takes the
+   * trip explicitly so a roll can search right after setting it. Returns the
+   * options per part, or null if the search failed.
+   */
+  async function findOptions(t: Trip = trip, ps: PieceId[] = pieces): Promise<Partial<Record<PieceId, Option[]>> | null> {
+    const ordered = PIECES.filter((p) => ps.includes(p.id));
+    const tBooked = t.booked;
+    const found: Partial<Record<PieceId, Option[]>> = {};
+    if (tBooked) found[tBooked.piece] = [bookedOption(tBooked)];
     setResults(
       Object.fromEntries(
-        orderedPieces.map((p) =>
-          booked?.piece === p.id
-            ? [p.id, { status: "done", options: [bookedOption(booked)], seen: [booked.name] }]
+        ordered.map((p) =>
+          tBooked?.piece === p.id
+            ? [p.id, { status: "done", options: [bookedOption(tBooked)], seen: [tBooked.name] }]
             : [p.id, { status: "loading", options: [], seen: [] }],
         ),
       ),
     );
-    setPicks(booked ? { [booked.piece]: bookedOption(booked) } : {});
+    setPicks(tBooked ? { [tBooked.piece]: bookedOption(tBooked) } : {});
     setItinerary(null);
     setSavedId(null);
     setSpent(0);
@@ -304,7 +330,7 @@ export function Planner() {
     const fail = (error: string) =>
       setResults((r) =>
         Object.fromEntries(
-          orderedPieces.map((p) => {
+          ordered.map((p) => {
             const cur = r[p.id];
             // Sections that already arrived keep their options.
             return [p.id, cur?.status === "done" ? { ...cur, toppingUp: false } : { status: "error", options: [], seen: [], error }];
@@ -318,7 +344,7 @@ export function Planner() {
       const res = await fetch("/api/night", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...trip, pieces }),
+        body: JSON.stringify({ ...t, pieces: ps }),
       });
       if (!res.ok || !res.body) {
         const data = await res.json().catch(() => ({}));
@@ -340,6 +366,7 @@ export function Planner() {
           if (event.type === "search") showProgress(`🔎 Searching: ${event.query}`);
           else if (event.type === "section") {
             seedLocations(event.options);
+            found[event.piece] = event.options;
             const label = PIECES.find((x) => x.id === event.piece)?.short ?? "That part";
             showProgress(`✓ ${label} sorted`);
             setResults((r) => ({
@@ -353,7 +380,7 @@ export function Planner() {
             }));
           } else if (event.type === "topup") {
             const label = PIECES.find((x) => x.id === event.piece)?.short.toLowerCase() ?? "more";
-            showProgress(`🔁 Swapping in ${rides ? "better" : "closer"} ${label} spots…`);
+            showProgress(`🔁 Swapping in ${t.rides ? "better" : "closer"} ${label} spots…`);
             setResults((r) => ({
               ...r,
               [event.piece]: { ...(r[event.piece] ?? { status: "loading", options: [], seen: [] }), toppingUp: true },
@@ -364,19 +391,70 @@ export function Planner() {
             finished = true;
           } else if (event.type === "error") {
             fail(event.error);
-            finished = true;
+            return null;
           }
         }
       }
-      if (!finished) fail("The connection dropped before the search finished. Please try again.");
+      if (!finished) {
+        fail("The connection dropped before the search finished. Please try again.");
+        return null;
+      }
+      return found;
     } catch (err) {
       fail((err as Error).message);
-    } finally {
+      return null;
     }
   }
 
-  async function buildItinerary() {
-    const picked = orderedPieces.flatMap((p) => (picks[p.id] ? [{ ...picks[p.id]!, piece: p.id }] : []));
+  /**
+   * Roll the dice: a random neighborhood and mix of parts, searched and
+   * built straight into a plan. Picks one of the shown options per part at
+   * random, so rolling the same area twice still differs. "Change picks"
+   * then shows every option, to swap any stop.
+   */
+  async function rollTheDice() {
+    const roll = rollNight({ noDrinks, recent: recentRolls() });
+    rememberRoll(roll.area);
+    const t: Trip = {
+      area: roll.area, vibe: roll.vibe, date, time: roll.time, partySize, budget, budgets,
+      cuisines: [], barTypes: [], activityTypes: [], rides: false, booked: undefined,
+    };
+    // Mirror the roll in the form, so going back to edit or change picks makes sense.
+    setRolled(true);
+    setRolling(true);
+    setBooked(null);
+    setRides(false);
+    setArea(roll.area);
+    setVibe(roll.vibe);
+    setTime(roll.time);
+    setPieces(roll.pieces);
+    setCuisines([]);
+    setBarTypes([]);
+    setActivityTypes([]);
+    try {
+      const found = await findOptions(t, roll.pieces);
+      if (!found) return;
+      const chosen: Partial<Record<PieceId, Option>> = {};
+      for (const p of roll.pieces) {
+        const options = found[p] ?? [];
+        if (options.length) chosen[p] = options[Math.floor(Math.random() * options.length)];
+      }
+      if (!Object.keys(chosen).length) return;
+      setPicks(chosen);
+      await buildItinerary(t, chosen, roll.pieces);
+    } finally {
+      setRolling(false);
+    }
+  }
+
+  async function buildItinerary(
+    t: Trip = trip,
+    chosenPicks: Partial<Record<PieceId, Option>> = picks,
+    ps: PieceId[] = pieces,
+  ) {
+    const picked = PIECES.filter((p) => ps.includes(p.id)).flatMap((p) =>
+      chosenPicks[p.id] ? [{ ...chosenPicks[p.id]!, piece: p.id }] : [],
+    );
     setWaitStarted(Date.now());
     setStep(4);
     setItinLoading(true);
@@ -387,13 +465,13 @@ export function Planner() {
       // Coordinates were looked up while choosing; these are almost always ready.
       const chosen = await Promise.all(
         picked.map(async (o) => {
-          locate(o);
+          locate(o, t.area);
           const point = await locating.current.get(venueKey(o));
           return point ? { ...o, ...point } : o;
         }),
       );
       const data = await postJSON<{ itinerary: Itinerary; costUsd: number }>("/api/itinerary", {
-        ...trip,
+        ...t,
         picks: chosen,
       });
       setSpent((c) => c + data.costUsd);
@@ -451,7 +529,7 @@ export function Planner() {
   const pickCount = orderedPieces.filter((p) => picks[p.id]).length;
   const anyLoading = orderedPieces.some((p) => results[p.id]?.status === "loading" || results[p.id]?.toppingUp);
   const phrases = useMemo(
-    () => searchPhrases({ area, budget: budgetLabel({ budget, budgets }), pieces, rides }),
+    () => (rolling ? dicePhrases({ area }) : searchPhrases({ area, budget: budgetLabel({ budget, budgets }), pieces, rides })),
     // A fresh shuffle for each search.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [waitStarted],
@@ -464,13 +542,20 @@ export function Planner() {
   useEffect(() => {
     const base = "Night Out · NYC";
     if (busy) document.title = step === 3 ? "⏳ Finding your night… · Night Out" : "⏳ Building your plan… · Night Out";
+    else if (step === 4 && itinError) document.title = "Something went wrong · Night Out";
     else if (wasBusy.current) document.title = step === 3 ? "✓ Your options are ready · Night Out" : "✓ Your plan is ready · Night Out";
     else document.title = base;
     wasBusy.current = busy;
-  }, [busy, step]);
+  }, [busy, step, itinError]);
+
+  // Each new step starts at the top of the page (a roll jumps straight to the plan).
+  useEffect(() => {
+    window.scrollTo({ top: 0 });
+  }, [step]);
 
   return (
-    <div className={`space-y-8 ${step < 4 ? "mx-auto max-w-4xl" : ""}`}>
+    // The area step uses the full width so the map can take half the screen.
+    <div className={`space-y-8 ${step > 0 && step < 4 ? "mx-auto max-w-4xl" : ""}`}>
       <Stepper step={step} onJump={(i) => i < step && setStep(i)} />
 
       {step === 0 && (
@@ -499,11 +584,12 @@ export function Planner() {
               </>
             }
           />
-          <figure className="space-y-2">
+          <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
+          <figure className="space-y-2 lg:sticky lg:top-4">
             <div
               role="region"
-              aria-label="Neighborhood map (optional; the same choices are in the list below)"
-              className="h-[260px] overflow-hidden rounded-2xl border border-line sm:h-[360px]"
+              aria-label="Neighborhood map (optional; the same choices are in the list beside it)"
+              className="h-[300px] overflow-hidden rounded-2xl border border-line lg:h-[min(70vh,640px)]"
             >
               <AreaMap
                 selected={area}
@@ -518,7 +604,7 @@ export function Planner() {
               Tap a neighborhood on the map, or choose from the list.
             </figcaption>
           </figure>
-          <div ref={areaListRef} className="space-y-8">
+          <div ref={areaListRef} className="space-y-6 lg:max-h-[min(70vh,640px)] lg:overflow-y-auto lg:pr-2">
             {visibleAreas(rides).map((b) => (
               <Section key={b.borough} title={b.borough}>
                 <ChipRow label={`${b.borough} neighborhoods`}>
@@ -537,14 +623,29 @@ export function Planner() {
               </Section>
             ))}
           </div>
-          <Section title="Somewhere else" hint="Type a neighborhood, a cross street, or a venue you'll be near.">
-            <input
-              value={isListedArea(area) || booked ? "" : area}
-              onChange={(e) => selectArea(e.target.value)}
-              placeholder="e.g. near Barclays Center, or Surprise me — anywhere in Brooklyn"
-              className="w-full rounded-xl border border-line bg-surface px-4 py-3 outline-none focus:border-accent"
+          </div>
+          <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
+            <Section title="Somewhere else" hint="Type a neighborhood, a cross street, or a venue you'll be near.">
+              <input
+                value={isListedArea(area) || booked ? "" : area}
+                onChange={(e) => selectArea(e.target.value)}
+                placeholder="e.g. near Barclays Center, or anywhere in Brooklyn"
+                className="w-full rounded-xl border border-line bg-surface px-4 py-3 outline-none focus:border-accent"
+              />
+            </Section>
+            <RollTheDice
+              budgets={budgets}
+              onToggleBudget={toggleBudget}
+              date={date}
+              onDate={setDate}
+              partySize={partySize}
+              onPartySize={setPartySize}
+              noDrinks={noDrinks}
+              onNoDrinks={setNoDrinks}
+              rolling={rolling}
+              onRoll={rollTheDice}
             />
-          </Section>
+          </div>
           <Nav onNext={() => setStep(1)} nextDisabled={!area.trim()} />
         </div>
       )}
@@ -626,13 +727,34 @@ export function Planner() {
                   type="button"
                   onClick={() => !isBooked && setPieces((ps) => toggle(ps, p.id))}
                   aria-pressed={on}
-                  className={`flex flex-col items-start gap-2 rounded-2xl border p-4 text-left transition ${
-                    on ? "border-accent bg-accent-soft" : "border-line bg-surface hover:border-muted"
+                  className={`group relative isolate flex aspect-[4/3] flex-col justify-end overflow-hidden rounded-2xl p-4 text-left transition sm:aspect-auto sm:h-40 ${
+                    on ? "ring-[3px] ring-accent" : "ring-1 ring-line hover:ring-muted"
                   }`}
                 >
-                  <span aria-hidden className="text-2xl">{p.emoji}</span>
-                  <span className="font-medium">{p.label}</span>
-                  {isBooked && <span className="text-xs text-accent">Booked: {booked.name}</span>}
+                  {/* Decorative photo; the label below names the part. */}
+                  <Image
+                    src={PIECE_PHOTOS[p.id]}
+                    alt=""
+                    fill
+                    sizes="(min-width: 640px) 33vw, 50vw"
+                    className={`-z-20 object-cover transition duration-300 ${
+                      on ? "brightness-100" : "brightness-[0.55] group-hover:brightness-75"
+                    }`}
+                  />
+                  {/* Dark fade behind the text, so it stays readable on any photo. */}
+                  <span aria-hidden className="absolute inset-0 -z-10 bg-gradient-to-t from-black/85 via-black/45 to-transparent" />
+                  {on && (
+                    <span
+                      aria-hidden
+                      className="absolute right-3 top-3 grid size-7 place-items-center rounded-full bg-accent text-sm font-bold text-accent-ink"
+                    >
+                      ✓
+                    </span>
+                  )}
+                  <span className="font-logo text-sm uppercase leading-tight tracking-[0.03em] text-white [text-shadow:0_1px_3px_rgba(0,0,0,0.6)] sm:text-lg">
+                    {p.label}
+                  </span>
+                  {isBooked && <span className="mt-1 text-xs font-medium text-white/90">Booked: {booked.name}</span>}
                 </button>
               );
             })}
@@ -661,7 +783,10 @@ export function Planner() {
 
           <Nav
             onBack={() => setStep(1)}
-            onNext={findOptions}
+            onNext={() => {
+              setRolled(false);
+              findOptions();
+            }}
             nextLabel="Find options →"
             nextDisabled={pieces.length === 0}
           />
@@ -747,7 +872,7 @@ export function Planner() {
             </span>
             <div className="flex gap-2">
               <GhostButton onClick={() => setStep(2)}>Edit</GhostButton>
-              <PrimaryButton onClick={buildItinerary} disabled={pickCount === 0}>
+              <PrimaryButton onClick={() => buildItinerary()} disabled={pickCount === 0}>
                 Build my night →
               </PrimaryButton>
             </div>
@@ -764,7 +889,7 @@ export function Planner() {
               <OptionSkeleton />
             </div>
           )}
-          {itinError && <ErrorBox message={itinError} onRetry={itinerary ? save : buildItinerary} />}
+          {itinError && <ErrorBox message={itinError} onRetry={itinerary ? save : () => buildItinerary()} />}
           {itinerary && (
             <>
               <NightPlan itinerary={itinerary} trip={trip} />
@@ -782,6 +907,7 @@ export function Planner() {
                   </PrimaryButton>
                 )}
                 <GhostButton onClick={() => setStep(3)}>← Change picks</GhostButton>
+                {rolled && <GhostButton onClick={rollTheDice}>🎲 Re-roll</GhostButton>}
               </div>
               {spent > 0 && <p className="text-xs text-muted">This plan cost about ${spent.toFixed(2)} in API usage.</p>}
             </>

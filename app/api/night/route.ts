@@ -1,6 +1,6 @@
 import { describeError } from "@/lib/claude";
 import { findSection } from "@/lib/findOptions";
-import { NightRequestSchema, type NightEvent, type Option, type PieceId } from "@/lib/schema";
+import { BUDGETS, NightRequestSchema, budgetLevels, type NightEvent, type Option, type PieceId } from "@/lib/schema";
 import { SHOW, choose, type Vetted } from "@/lib/vetOptions";
 
 export const maxDuration = 300;
@@ -17,6 +17,8 @@ export async function POST(request: Request) {
     return Response.json({ error: "Invalid request." }, { status: 400 });
   }
   const { pieces, ...trip } = parsed.data;
+  // The budget levels picked, so each section shows a spread across them.
+  const levels = budgetLevels(trip).map((l) => BUDGETS.indexOf(l));
 
   const encoder = new TextEncoder();
   const body = new ReadableStream<Uint8Array>({
@@ -96,7 +98,7 @@ export async function POST(request: Request) {
           console.error(`[night] ${piece}: search failed at ${secs()}s`, err);
         }
 
-        let pick = choose(rounds, shownElsewhere(piece));
+        let pick = choose(rounds, shownElsewhere(piece), levels);
         const dropped = rounds.flatMap((r) => r.dropped).map((d) => `${d.name} (${d.reason})`).join(", ");
         console.log(
           `[night] ${piece}: ${pick.options.length} kept at ${secs()}s [${pick.options.map((o) => `${o.name}: ${o.category} ${o.price}`).join("; ")}]${dropped ? `; dropped ${dropped}` : ""}`,
@@ -111,7 +113,7 @@ export async function POST(request: Request) {
           // Show what we have now, then look for more nearby spots.
           if (pick.options.length) sendSection(piece, pick);
           await topUp(piece, rounds);
-          pick = choose(rounds, shownElsewhere(piece));
+          pick = choose(rounds, shownElsewhere(piece), levels);
         }
         if (pick.options.length || !failure) sendSection(piece, pick);
         console.log(`[night] ${piece}: sent ${pick.options.length} at ${secs()}s`);

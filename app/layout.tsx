@@ -17,6 +17,8 @@ const boldonse = Boldonse({
   subsets: ["latin"],
   weight: "400",
   display: "swap",
+  // Next has no size-matched fallback for this face; skip it rather than warn.
+  adjustFontFallback: false,
 });
 
 const fraunces = Fraunces({

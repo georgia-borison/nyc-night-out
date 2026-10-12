@@ -17,6 +17,13 @@
   --dinner: #ff8a5b;
   --show: #4fd1c5;
   --dance: #ff6fb5;
+  /* "Roll the dice": casino crimson and gold, kept apart from the orange accent. */
+  --dice: #7a1424;
+  --dice-deep: #4a0b15;
+  --dice-gold: #f2c14e;
+  --dice-ink: #2a1a04;
+  --dice-text: #f8ece8;
+  --dice-muted: #ecc7cd;
 }
 
 @theme inline {
@@ -34,6 +41,12 @@
   --color-dinner: var(--dinner);
   --color-show: var(--show);
   --color-dance: var(--dance);
+  --color-dice: var(--dice);
+  --color-dice-deep: var(--dice-deep);
+  --color-dice-gold: var(--dice-gold);
+  --color-dice-ink: var(--dice-ink);
+  --color-dice-text: var(--dice-text);
+  --color-dice-muted: var(--dice-muted);
   --font-sans: var(--font-geist-sans);
   --font-display: var(--font-fraunces);
   --font-logo: var(--font-boldonse);
@@ -180,4 +193,26 @@ input[type="time"]::-webkit-calendar-picker-indicator {
 .area-map.leaflet-container.leaflet-touch-drag,
 .area-map.leaflet-container.leaflet-touch-drag.leaflet-touch-zoom {
   touch-action: pan-x pan-y;
+}
+
+/* ---- Roll the dice ---- */
+/* Crimson felt with a faint diamond weave, like a card table. */
+.dice-felt {
+  background-color: var(--dice);
+  background-image:
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.035) 0 1px, transparent 1px 14px),
+    repeating-linear-gradient(-45deg, rgba(255, 255, 255, 0.035) 0 1px, transparent 1px 14px),
+    linear-gradient(160deg, var(--dice) 0%, var(--dice-deep) 100%);
+  box-shadow: 0 0 0 1.5px var(--dice-gold), 0 10px 40px -12px rgba(242, 193, 78, 0.35);
+}
+@keyframes dice-spin {
+  0% { transform: rotate(-12deg); }
+  50% { transform: rotate(200deg) scale(1.15); }
+  100% { transform: rotate(348deg); }
+}
+.dice-icon { display: inline-block; transform: rotate(-12deg); }
+.dice-felt:hover .dice-icon, .dice-icon.rolling { animation: dice-spin 0.9s ease-in-out; }
+.dice-icon.rolling { animation-iteration-count: infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .dice-felt:hover .dice-icon, .dice-icon.rolling { animation: none; }
 }

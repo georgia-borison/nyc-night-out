@@ -94,7 +94,9 @@ function budgetLines(trip: Trip, piece?: PieceId) {
       : budgetIsRange(trip)
         ? `Budget: ${budgetLabel(trip)} per person, a range. Spread the options across this range. Never go above ${top}.`
         : `Budget: ${levels.join(" or ")} per person (they skipped the levels in between). Every option must be at one of these levels, spread across them. Never go above ${top}.`;
-  return [rule, ...lines];
+  // A $ and $$$ night should really show both, not three $$$ places.
+  const mix = levels.length > 1 ? [`Include at least one option at each of these levels: ${levels.join(", ")}.`] : [];
+  return [rule, ...mix, ...lines];
 }
 
 function tripLines(trip: Trip & { otherPieces?: PieceId[] }, piece?: PieceId) {

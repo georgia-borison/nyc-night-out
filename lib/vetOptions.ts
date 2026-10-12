@@ -56,9 +56,16 @@ function sameKind(a: Option, b: Option) {
  * The options to show for a section. Order of preference: nearby and on
  * budget, then nearby but cheaper, then ones the map couldn't place, then (only if there still aren't enough)
  * the closest far ones. At each step, a kind of place that isn't showing yet
- * (a new cuisine or bar style) wins over another of the same kind.
+ * (a new cuisine or bar style) wins over another of the same kind. With
+ * several budget levels picked, one nearby option at each level comes first,
+ * so a $ and $$$ night really shows both.
  */
-export function choose(rounds: Vetted[], shownElsewhere: Set<string> = new Set()): { options: Option[]; note?: string } {
+export function choose(
+  rounds: Vetted[],
+  shownElsewhere: Set<string> = new Set(),
+  /** The budget levels picked (0-3), to show a spread across them. */
+  levels: number[] = [],
+): { options: Option[]; note?: string } {
   // Names already shown in another section are skipped, so a bar isn't both pre- and post-dinner.
   const seen = new Set(shownElsewhere);
   const unique = (list: Option[]) =>
@@ -82,6 +89,15 @@ export function choose(rounds: Vetted[], shownElsewhere: Set<string> = new Set()
       picked.push(o);
     }
   };
+  // One at each picked level first, cheapest level first.
+  if (levels.length > 1) {
+    for (const level of [...levels].sort((a, b) => a - b)) {
+      const atLevel = near.filter((o) => priceLevel(o.price) === level);
+      const fresh = atLevel.find((o) => !picked.includes(o) && !picked.some((p) => sameKind(p, o)));
+      const any = fresh ?? atLevel.find((o) => !picked.includes(o));
+      if (any && picked.length < SHOW) picked.push(any);
+    }
+  }
   take(near, true);
   take(cheaper, true);
   take(near, false);
