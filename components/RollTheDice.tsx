@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { BUDGETS, type Budget } from "@/lib/schema";
 
 /**
@@ -20,6 +20,7 @@ export function RollTheDice({
   onNoDrinks,
   rolling,
   onRoll,
+  defaultOpen = false,
 }: {
   budgets: Budget[];
   onToggleBudget: (b: Budget) => void;
@@ -31,13 +32,22 @@ export function RollTheDice({
   onNoDrinks: (on: boolean) => void;
   rolling: boolean;
   onRoll: () => void;
+  /** Start opened and scrolled into view (from "Roll the dice" on the home page). */
+  defaultOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
+  const sectionRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!defaultOpen) return;
+    // After the page settles (the map above loads and takes its space).
+    const id = window.setTimeout(() => sectionRef.current?.scrollIntoView({ block: "center" }), 400);
+    return () => window.clearTimeout(id);
+  }, [defaultOpen]);
   const panelId = useId();
   const brass = "border-dice-gold bg-dice-gold text-dice-ink font-semibold";
   const plain = "border-dice-gold/35 text-dice-text hover:border-dice-gold/70";
   return (
-    <section aria-labelledby={`${panelId}-title`} className="dice-felt space-y-4 rounded-2xl p-4">
+    <section ref={sectionRef} aria-labelledby={`${panelId}-title`} className="dice-felt space-y-4 rounded-2xl p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <h2 id={`${panelId}-title`} className="flex items-center gap-2 font-logo text-sm uppercase tracking-[0.05em] text-dice-gold">

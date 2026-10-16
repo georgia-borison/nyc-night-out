@@ -24,7 +24,7 @@ export default function PlansPage() {
       {plans.length === 0 ? (
         <p className="text-muted">
           No saved plans yet.{" "}
-          <Link href="/" className="text-accent underline underline-offset-4">
+          <Link href="/plan" className="text-accent underline underline-offset-4">
             Plan a night
           </Link>
         </p>

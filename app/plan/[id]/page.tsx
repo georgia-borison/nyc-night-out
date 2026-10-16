@@ -16,7 +16,7 @@ export default async function PlanPage({ params }: PageProps<"/plan/[id]">) {
       <NightPlan itinerary={plan.itinerary} trip={plan.trip} />
       <div className="flex flex-wrap items-center gap-4">
         <CopyLinkButton />
-        <Link href="/" className="text-sm text-muted underline underline-offset-4 hover:text-fg">
+        <Link href="/plan" className="text-sm text-muted underline underline-offset-4 hover:text-fg">
           Plan your own night
         </Link>
       </div>

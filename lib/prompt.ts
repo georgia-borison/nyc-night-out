@@ -301,7 +301,7 @@ ${stops}
 ${distances.length ? `\nDistances between them (walking is roughly 20 minutes per mile):\n${distances.join("\n")}\n` : ""}
 Visit the stops in the order listed: it's a sensible order (drinks before dinner first, a nightcap after, dancing last) with the least walking between them. Only change it if a fixed showtime or booking time makes it impossible, and then say why in the summary. Respect any fixed showtimes, and keep an already-booked stop at exactly its booked time, fitting the other stops before and after it. Give realistic arrival times starting around ${formatTime(trip.time)} and how long to spend at each place, leaving enough time to get between stops given the distances. For getting_there, give practical advice on getting there from the previous stop (which way to walk, which subway line, or to grab a cab). Don't state walking minutes or distances; the app adds real walking times. Keep each stop's name, category, address and URL exactly as given.
 
-Give the night a playful 2-6 word title that riffs on the vibe, the weather or the neighborhood (like "Rain Check? Never." or "Uptown Low & Slow"), plus a one-line tagline. The title must never be empty.
+Give the night a playful 2-6 word title, plus a one-line tagline. Both must fit the actual stops above and this neighborhood: riff on what they'll really eat, drink or see there, or the street they're on (like "Rain Check? Never." or "Uptown Low & Slow"). Never name a cuisine, place, neighborhood or theme that isn't in the plan, even if the vibe suggests one. The title must never be empty.
 
 Call the submit tool with the itinerary.`;
 }

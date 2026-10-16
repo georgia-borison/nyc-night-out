@@ -108,7 +108,7 @@ function closeTogether(
   return Object.fromEntries(pick.map(({ piece, ...o }) => [piece, o]));
 }
 
-export function Planner() {
+export function Planner({ openDice = false }: { openDice?: boolean }) {
   const [step, setStep] = useState(0);
 
   const [area, setArea] = useState("");
@@ -583,9 +583,22 @@ export function Planner() {
   }, [busy, step, itinError]);
 
   // Each new step starts at the top of the page (a roll jumps straight to the plan).
+  // Not on first load, so arriving from "Roll the dice" can scroll to the dice card.
+  const firstStep = useRef(true);
   useEffect(() => {
+    if (firstStep.current) {
+      firstStep.current = false;
+      return;
+    }
     window.scrollTo({ top: 0 });
   }, [step]);
+
+  // Download the plan's map code now, from the same version of the site as this page.
+  // Fetched only once a plan appears, it could come from a newer release if the site
+  // was updated in the meantime, and Next.js recovers from that by reloading the page.
+  useEffect(() => {
+    void import("./PlanMap");
+  }, []);
 
   return (
     // The area step uses the full width so the map can take half the screen.
@@ -670,6 +683,7 @@ export function Planner() {
               onNoDrinks={setNoDrinks}
               rolling={rolling}
               onRoll={rollTheDice}
+              defaultOpen={openDice}
             />
             <Section title="Somewhere else" hint="Type a neighborhood, a cross street, or a venue you'll be near.">
               <input

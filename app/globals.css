@@ -216,3 +216,20 @@ input[type="time"]::-webkit-calendar-picker-indicator {
 @media (prefers-reduced-motion: reduce) {
   .dice-felt:hover .dice-icon, .dice-icon.rolling { animation: none; }
 }
+
+/* ---- Landing page: the drifting photo wall ---- */
+@keyframes drift-up {
+  from { transform: translateY(0); }
+  to { transform: translateY(-50%); }
+}
+@keyframes drift-down {
+  from { transform: translateY(-50%); }
+  to { transform: translateY(0); }
+}
+/* Each column holds its tiles twice, so moving by half loops seamlessly. */
+.drift-up { animation: drift-up 70s linear infinite; }
+.drift-down { animation: drift-down 80s linear infinite; }
+.landing-still .drift-up, .landing-still .drift-down { animation-play-state: paused; }
+@media (prefers-reduced-motion: reduce) {
+  .drift-up, .drift-down { animation: none; }
+}

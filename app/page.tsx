@@ -1,8 +1,6 @@
-import { connection } from "next/server";
-import { Planner } from "@/components/Planner";
+import { Landing } from "@/components/Landing";
 
-export default async function Home() {
-  // Render per request so the default date is today, not the build date.
-  await connection();
-  return <Planner />;
+// The home page; "Plan my night" opens the planner at /plan.
+export default function Home() {
+  return <Landing />;
 }
