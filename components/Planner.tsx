@@ -555,9 +555,10 @@ export function Planner({ openDice = false }: { openDice?: boolean }) {
       shown.add(key);
       return true;
     });
-    // Once something is picked elsewhere, list the closest options to it first.
-    const dist = (o: Option) => nearestPick(o, p.id)?.minutes ?? Infinity;
-    visibleOptions[p.id] = options.some((o) => dist(o) !== Infinity) ? [...options].sort((a, b) => dist(a) - dist(b)) : options;
+    // Keep the order steady while picking: re-sorting by distance moved cards under
+    // the pointer, so a quick click could land on "More like this" and start a new
+    // search. Each card shows its walk to the other picks instead.
+    visibleOptions[p.id] = options;
   }
 
   const pickCount = orderedPieces.filter((p) => picks[p.id]).length;
