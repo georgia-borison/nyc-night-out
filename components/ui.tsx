@@ -31,7 +31,7 @@ export function Chip({
         selected
           ? "border-accent bg-accent text-accent-ink font-medium"
           : highlighted
-            ? "-translate-y-0.5 border-accent bg-accent-soft text-fg shadow-[0_4px_14px_rgba(255,138,91,0.25)]"
+            ? "-translate-y-0.5 border-accent bg-accent-soft text-fg shadow-[0_4px_14px_rgba(224,60,200,0.3)]"
             : "border-line bg-surface text-fg hover:border-muted"
       }`}
     >

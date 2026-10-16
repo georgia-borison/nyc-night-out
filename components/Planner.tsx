@@ -777,7 +777,7 @@ export function Planner({ openDice = false }: { openDice?: boolean }) {
                   onClick={() => !isBooked && setPieces((ps) => toggle(ps, p.id))}
                   aria-pressed={on}
                   className={`group relative isolate flex aspect-[4/3] flex-col justify-end overflow-hidden rounded-2xl p-4 text-left transition sm:aspect-auto sm:h-40 ${
-                    on ? "ring-[3px] ring-accent shadow-[inset_0_0_0_2px_rgba(255,138,91,0.35)]" : "ring-1 ring-line hover:ring-muted"
+                    on ? "ring-[3px] ring-accent shadow-[inset_0_0_0_2px_rgba(255,122,47,0.4)]" : "ring-1 ring-line hover:ring-muted"
                   }`}
                 >
                   {/* Decorative photo; the label below names the part. */}

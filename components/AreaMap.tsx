@@ -11,12 +11,12 @@ import type { Feature, FeatureCollection, Geometry } from "geojson";
 type AreaProps = { area: string; mode: "walk" | "ride" | "both" };
 type AreaFeature = Feature<Geometry, AreaProps>;
 
-const ACCENT = "#ff8a5b";
-const OUTLINE = "#a59fb3";
+const ACCENT = "#ff7a2f";
+const OUTLINE = "#b3a6d9";
 
 function styleFor(area: string, selected: string, hovered: string | null): L.PathOptions {
   if (area === selected) return { color: ACCENT, weight: 2, opacity: 1, fillColor: ACCENT, fillOpacity: 0.45 };
-  if (area === hovered) return { color: "#f3efe8", weight: 2, opacity: 1, fillColor: ACCENT, fillOpacity: 0.22 };
+  if (area === hovered) return { color: "#f7f1ff", weight: 2, opacity: 1, fillColor: ACCENT, fillOpacity: 0.22 };
   return { color: OUTLINE, weight: 1, opacity: 0.6, fillColor: OUTLINE, fillOpacity: 0.06 };
 }
 

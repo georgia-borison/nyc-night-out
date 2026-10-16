@@ -119,6 +119,7 @@ export function Landing() {
                       lit ? "scale-105 brightness-110 saturate-110" : "brightness-[0.5] saturate-[0.8]"
                     }`}
                   />
+                  <div aria-hidden className={`photo-wash absolute inset-0 ${lit ? "opacity-25" : "opacity-100"}`} />
                 </div>
               );
             })}
@@ -129,7 +130,7 @@ export function Landing() {
       {/* Darken the middle so the text is always readable over the photos. */}
       <div
         aria-hidden
-        className="absolute inset-0 bg-[radial-gradient(ellipse_55%_50%_at_center,rgba(14,13,18,0.86)_0%,rgba(14,13,18,0.6)_55%,rgba(14,13,18,0)_100%)]"
+        className="absolute inset-0 bg-[radial-gradient(ellipse_55%_50%_at_center,rgba(13,8,32,0.86)_0%,rgba(13,8,32,0.6)_55%,rgba(13,8,32,0)_100%)]"
       />
 
       <div
@@ -137,7 +138,7 @@ export function Landing() {
       >
         <p className="text-xs font-semibold uppercase tracking-[0.3em] text-muted">New York City · Tonight</p>
         <h1 id="landing-title" className="mt-4 font-logo text-[2.1rem] uppercase leading-[1.2] tracking-[0.02em] sm:text-6xl sm:leading-[1.12]">
-          <span className="block">Plan the</span> <span className="block text-accent">perfect</span>{" "}
+          <span className="block">Plan the</span> <span className="block"><span className="text-glow-gradient">perfect</span></span>{" "}
           <span className="block">night out</span>
         </h1>
         <p className="mx-auto mt-5 max-w-xl text-base text-fg/85 sm:text-lg">
@@ -174,7 +175,7 @@ export function Landing() {
           <Link
             href="/plan"
             onClick={open("/plan")}
-            className="rounded-full bg-accent px-7 py-3.5 font-semibold text-accent-ink transition hover:brightness-110"
+            className="bg-glow-gradient rounded-full px-7 py-3.5 font-semibold text-accent-ink shadow-[0_6px_28px_rgba(224,60,200,0.35)] transition hover:brightness-110"
           >
             Plan my night →
           </Link>

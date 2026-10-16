@@ -1,29 +1,32 @@
 @import "tailwindcss";
 
-/* A late-night palette: ink background, warm neon accent. */
+/* An electric late-night palette: deep indigo, molten orange, cobalt and magenta glow. */
 :root {
-  --bg: #0e0d12;
-  --surface: #17151e;
-  --surface-2: #211e2a;
-  --line: #2e2a3a;
-  --fg: #f3efe8;
-  --muted: #a59fb3;
-  --accent: #ff8a5b;
-  --accent-ink: #1a0f0a;
-  --accent-soft: rgba(255, 138, 91, 0.14);
+  --bg: #0d0820;
+  --surface: #170f33;
+  --surface-2: #221846;
+  --line: #352a63;
+  --fg: #f7f1ff;
+  --muted: #b3a6d9;
+  --accent: #ff7a2f;
+  --accent-ink: #1c0a02;
+  --accent-soft: rgba(255, 122, 47, 0.16);
   --danger: #ff6b7a;
+  --glow-blue: #3d5bff;
+  --glow-magenta: #e03cc8;
+  --glow-amber: #ffb43a;
   /* One color per part of the night, used on the plan page. */
-  --drinks: #b79cff;
-  --dinner: #ff8a5b;
-  --show: #4fd1c5;
-  --dance: #ff6fb5;
-  /* "Roll the dice": muted wine and brass, kept apart from the orange accent. */
-  --dice: #3a1820;
-  --dice-deep: #2a1218;
-  --dice-gold: #cfae6d;
-  --dice-ink: #1f1608;
-  --dice-text: #f3ebe6;
-  --dice-muted: #cdb7ba;
+  --drinks: #8f7bff;
+  --dinner: #ff7a2f;
+  --show: #4f8bff;
+  --dance: #ff4fc3;
+  /* "Roll the dice": violet felt and amber, quieter than the main accent. */
+  --dice: #2a1450;
+  --dice-deep: #1b0d38;
+  --dice-gold: #ffb43a;
+  --dice-ink: #1f1303;
+  --dice-text: #f7f1ff;
+  --dice-muted: #c9bce8;
 }
 
 @theme inline {
@@ -37,6 +40,9 @@
   --color-accent-ink: var(--accent-ink);
   --color-accent-soft: var(--accent-soft);
   --color-danger: var(--danger);
+  --color-glow-blue: var(--glow-blue);
+  --color-glow-magenta: var(--glow-magenta);
+  --color-glow-amber: var(--glow-amber);
   --color-drinks: var(--drinks);
   --color-dinner: var(--dinner);
   --color-show: var(--show);
@@ -57,9 +63,11 @@ html {
 }
 
 body {
+  /* Liquid glow: cobalt top left, magenta right, molten orange low. */
   background:
-    radial-gradient(1200px 500px at 80% -10%, rgba(255, 138, 91, 0.08), transparent 60%),
-    radial-gradient(900px 400px at -10% 10%, rgba(140, 110, 255, 0.07), transparent 60%),
+    radial-gradient(900px 600px at -5% -5%, rgba(61, 91, 255, 0.22), transparent 60%),
+    radial-gradient(800px 600px at 105% 35%, rgba(224, 60, 200, 0.16), transparent 60%),
+    radial-gradient(1100px 500px at 40% 115%, rgba(255, 122, 47, 0.16), transparent 60%),
     var(--bg);
   background-attachment: fixed;
   color: var(--fg);
@@ -91,7 +99,7 @@ input[type="time"]::-webkit-calendar-picker-indicator {
   border-radius: 9999px;
   border: 2px solid var(--bg);
   background: var(--pin, var(--accent));
-  color: #120e14;
+  color: #120a1e;
   font: 700 13px/1 var(--font-geist-sans), system-ui, sans-serif;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
   transition: transform 150ms ease;
@@ -105,7 +113,7 @@ input[type="time"]::-webkit-calendar-picker-indicator {
   font-family: var(--font-geist-sans), system-ui, sans-serif;
 }
 .leaflet-control-attribution {
-  background: rgba(14, 13, 18, 0.75) !important;
+  background: rgba(13, 8, 32, 0.75) !important;
   color: var(--muted) !important;
 }
 .leaflet-control-attribution a {
@@ -113,7 +121,8 @@ input[type="time"]::-webkit-calendar-picker-indicator {
 }
 /* Turn the light OpenStreetMap tiles into a dark night map. */
 .plan-map .leaflet-tile-pane {
-  filter: invert(1) hue-rotate(180deg) brightness(0.75) contrast(0.9) saturate(0.5);
+  /* sepia + hue-rotate tints the night map violet to match the page. */
+  filter: invert(1) hue-rotate(180deg) brightness(0.72) contrast(0.92) sepia(0.3) hue-rotate(225deg) saturate(1.05);
 }
 .plan-map .leaflet-bar a {
   background: var(--surface-2);
@@ -196,14 +205,32 @@ input[type="time"]::-webkit-calendar-picker-indicator {
 }
 
 /* ---- Roll the dice ---- */
-/* Crimson felt with a faint diamond weave, like a card table. */
+/* Violet felt with a faint diamond weave, like a card table. */
 .dice-felt {
   background-color: var(--dice);
   background-image:
     repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.02) 0 1px, transparent 1px 14px),
     repeating-linear-gradient(-45deg, rgba(255, 255, 255, 0.02) 0 1px, transparent 1px 14px),
     linear-gradient(160deg, var(--dice) 0%, var(--dice-deep) 100%);
-  border: 1px solid rgba(207, 174, 109, 0.5);
+  border: 1px solid rgba(255, 180, 58, 0.45);
+}
+
+/* Molten orange into magenta, for the headline word and the main button. */
+.text-glow-gradient {
+  background: linear-gradient(100deg, var(--glow-amber) 0%, var(--accent) 40%, var(--glow-magenta) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.bg-glow-gradient {
+  background: linear-gradient(100deg, var(--glow-amber) 0%, var(--accent) 45%, #ff5ca8 100%);
+}
+
+/* Landing photos: a violet-to-orange wash so the wall reads like one collage. */
+.photo-wash {
+  background: linear-gradient(160deg, rgba(61, 91, 255, 0.55) 0%, rgba(140, 50, 220, 0.5) 45%, rgba(255, 122, 47, 0.5) 100%);
+  mix-blend-mode: color;
+  transition: opacity 700ms;
 }
 @keyframes dice-spin {
   0% { transform: rotate(-12deg); }

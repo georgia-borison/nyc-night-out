@@ -60,7 +60,7 @@ export function LoadingShow({
       />
       <div className="relative flex items-center gap-5">
         <div className="relative size-16 shrink-0" aria-hidden>
-          <MoonMark className="moon-bob size-16 drop-shadow-[0_0_18px_rgba(255,138,91,0.6)]" />
+          <MoonMark className="moon-bob size-16 drop-shadow-[0_0_18px_rgba(255,122,47,0.65)]" />
           <span className="star-twinkle absolute -right-2 top-1 text-xs text-fg" style={{ animationDelay: "0s" }}>✦</span>
           <span className="star-twinkle absolute -left-1 bottom-0 text-[10px] text-drinks" style={{ animationDelay: "0.7s" }}>✦</span>
           <span className="star-twinkle absolute right-3 -bottom-2 text-[9px] text-accent" style={{ animationDelay: "1.4s" }}>✦</span>

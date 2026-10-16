@@ -51,7 +51,7 @@ export default function PlanMap({
         maxZoom={19}
       />
       {route.length > 1 && (
-        <Polyline positions={route} pathOptions={{ color: "#ff8a5b", weight: 3, opacity: 0.8, dashArray: "6 8" }} />
+        <Polyline positions={route} pathOptions={{ color: "#ff7a2f", weight: 3, opacity: 0.8, dashArray: "6 8" }} />
       )}
       {stops.map((s) => (
         <Marker
