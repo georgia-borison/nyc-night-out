@@ -113,7 +113,8 @@ export function Landing() {
                     alt=""
                     fill
                     sizes="256px"
-                    priority={c < 2 && i < 3}
+                    // Only 11 different small photos, repeated: load them all now so no tile pops in late.
+                    loading="eager"
                     className={`object-cover transition duration-700 ${
                       lit ? "scale-105 brightness-110 saturate-110" : "brightness-[0.5] saturate-[0.8]"
                     }`}
