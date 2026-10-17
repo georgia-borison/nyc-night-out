@@ -326,7 +326,12 @@ export function Planner({ openDice = false }: { openDice?: boolean }) {
    * trip explicitly so a roll can search right after setting it. Returns the
    * options per part, or null if the search failed.
    */
-  async function findOptions(t: Trip = trip, ps: PieceId[] = pieces): Promise<Partial<Record<PieceId, Option[]>> | null> {
+  async function findOptions(
+    t: Trip = trip,
+    ps: PieceId[] = pieces,
+    // A roll searches behind its loading screen instead of showing the cards.
+    showCards = true,
+  ): Promise<Partial<Record<PieceId, Option[]>> | null> {
     const ordered = PIECES.filter((p) => ps.includes(p.id));
     const tBooked = t.booked;
     const found: Partial<Record<PieceId, Option[]>> = {};
@@ -346,7 +351,7 @@ export function Planner({ openDice = false }: { openDice?: boolean }) {
     setSpent(0);
     setFlash(null);
     setWaitStarted(Date.now());
-    setStep(3);
+    setStep(showCards ? 3 : 4);
 
     const fail = (error: string) =>
       setResults((r) =>
@@ -431,7 +436,7 @@ export function Planner({ openDice = false }: { openDice?: boolean }) {
    * Roll the dice: a random neighborhood and mix of parts, searched and
    * built straight into a plan. Picks a set of stops close to each other
    * (see closeTogether), so rolling the same area twice still differs but
-   * never zigzags. "Change picks" then shows every option, to swap any stop.
+   * never zigzags. The whole roll runs behind one loading screen and ends on the plan.
    */
   async function rollTheDice() {
     const roll = rollNight({ noDrinks, recent: recentRolls() });
@@ -452,11 +457,17 @@ export function Planner({ openDice = false }: { openDice?: boolean }) {
     setCuisines([]);
     setBarTypes([]);
     setActivityTypes([]);
+    // One loading screen from the roll to the finished plan: no cards to pick from.
+    setItinError(null);
+    setItinLoading(true);
     try {
-      const found = await findOptions(t, roll.pieces);
-      if (!found) return;
-      const chosen = closeTogether(roll.pieces, found);
-      if (!Object.keys(chosen).length) return;
+      const found = await findOptions(t, roll.pieces, false);
+      const chosen = found ? closeTogether(roll.pieces, found) : {};
+      if (!Object.keys(chosen).length) {
+        setItinLoading(false);
+        setItinError("The dice came up empty this time. Roll again for a different night.");
+        return;
+      }
       setPicks(chosen);
       await buildItinerary(t, chosen, roll.pieces);
     } finally {
@@ -572,7 +583,7 @@ export function Planner({ openDice = false }: { openDice?: boolean }) {
   const planPhrases = useMemo(() => itineraryPhrases(), []);
 
   // The browser tab shows progress, so it's visible while you're in other tabs.
-  const busy = (step === 3 && anyLoading) || (step === 4 && itinLoading);
+  const busy = (step === 3 && anyLoading) || (step === 4 && (itinLoading || rolling));
   const wasBusy = useRef(false);
   useEffect(() => {
     const base = "Night Out · NYC";
@@ -938,12 +949,22 @@ export function Planner({ openDice = false }: { openDice?: boolean }) {
         <div className="space-y-8">
           {itinLoading && (
             <div className="space-y-4">
-              <LoadingShow phrases={planPhrases} flash={null} startedAt={waitStarted} expected="Usually under a minute" />
+              <LoadingShow
+                phrases={rolling ? phrases : planPhrases}
+                flash={rolling ? flash : null}
+                startedAt={waitStarted}
+                expected={rolling ? "Usually about a minute" : "Usually under a minute"}
+              />
               <OptionSkeleton />
               <OptionSkeleton />
             </div>
           )}
-          {itinError && <ErrorBox message={itinError} onRetry={itinerary ? save : () => buildItinerary()} />}
+          {itinError && (
+            <ErrorBox
+              message={itinError}
+              onRetry={itinerary ? save : rolled && !Object.keys(picks).length ? rollTheDice : () => buildItinerary()}
+            />
+          )}
           {itinerary && (
             <>
               <NightPlan itinerary={itinerary} trip={trip} />
@@ -960,8 +981,11 @@ export function Planner({ openDice = false }: { openDice?: boolean }) {
                     {saving ? "Saving…" : "Save & get a share link"}
                   </PrimaryButton>
                 )}
-                <GhostButton onClick={() => setStep(3)}>← Change picks</GhostButton>
-                {rolled && <GhostButton onClick={rollTheDice}>🎲 Re-roll</GhostButton>}
+                {rolled ? (
+                  <GhostButton onClick={rollTheDice}>🎲 Re-roll</GhostButton>
+                ) : (
+                  <GhostButton onClick={() => setStep(3)}>← Change picks</GhostButton>
+                )}
               </div>
               {spent > 0 && <p className="text-xs text-muted">This plan cost about ${spent.toFixed(2)} in API usage.</p>}
             </>
