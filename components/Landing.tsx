@@ -18,7 +18,7 @@ type Tile = { src: string; stage: number | null };
 
 const P = "/images/pieces/";
 const L = "/images/landing/";
-// Columns of the tilted grid; each scrolls endlessly (the list is drawn twice).
+// Columns of the tilted grid; each scrolls endlessly (the list is drawn four times).
 const COLUMNS: Tile[][] = [
   [
     { src: `${P}pre-drinks-2.jpg`, stage: 0 },
@@ -49,6 +49,9 @@ const COLUMNS: Tile[][] = [
     { src: `${P}dinner-2.jpg`, stage: 1 },
   ],
 ];
+
+// Enough columns to reach the edges of wide screens; extras are clipped.
+const WALL = Array.from({ length: 10 }, (_, i) => COLUMNS[i % COLUMNS.length]);
 
 const STEP_MS = 2600;
 
@@ -102,12 +105,12 @@ export function Landing() {
           leaving ? "scale-125 opacity-0" : ""
         } ${still ? "landing-still" : ""}`}
       >
-        {[...COLUMNS, ...COLUMNS.slice(0, 2)].map((column, c) => (
-          <div key={c} className={`flex w-44 shrink-0 flex-col gap-4 sm:w-56 ${c % 2 ? "drift-down" : "drift-up"}`}>
-            {[...column, ...column].map((tile, i) => {
+        {WALL.map((column, c) => (
+          <div key={c} className={`flex w-44 shrink-0 flex-col gap-4 self-start pb-4 sm:w-56 ${c % 2 ? "drift-down" : "drift-up"}`}>
+            {[...column, ...column, ...column, ...column].map((tile, i) => {
               const lit = tile.stage === stage;
               return (
-                <div key={i} className="relative aspect-[4/5] w-full overflow-hidden rounded-2xl">
+                <div key={i} className="relative aspect-[4/5] w-full shrink-0 overflow-hidden rounded-2xl">
                   <Image
                     src={tile.src}
                     alt=""

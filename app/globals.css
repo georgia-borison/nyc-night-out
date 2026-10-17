@@ -70,6 +70,8 @@ body {
     radial-gradient(1100px 500px at 40% 115%, rgba(255, 122, 47, 0.16), transparent 60%),
     var(--bg);
   background-attachment: fixed;
+  /* The full-width home page wall (100vw) includes the scrollbar; don't let it add a sideways scroll. */
+  overflow-x: clip;
   color: var(--fg);
   font-family: var(--font-geist-sans), system-ui, sans-serif;
 }
@@ -245,18 +247,19 @@ input[type="time"]::-webkit-calendar-picker-indicator {
 }
 
 /* ---- Landing page: the drifting photo wall ---- */
+/* Each column holds its tiles four times and moves by one copy (25%), so it loops
+   seamlessly with at least a full copy above the screen and two below. */
 @keyframes drift-up {
-  from { transform: translateY(0); }
+  from { transform: translateY(-25%); }
   to { transform: translateY(-50%); }
 }
 @keyframes drift-down {
   from { transform: translateY(-50%); }
-  to { transform: translateY(0); }
+  to { transform: translateY(-25%); }
 }
-/* Each column holds its tiles twice, so moving by half loops seamlessly. */
 .drift-up { animation: drift-up 70s linear infinite; }
 .drift-down { animation: drift-down 80s linear infinite; }
 .landing-still .drift-up, .landing-still .drift-down { animation-play-state: paused; }
 @media (prefers-reduced-motion: reduce) {
-  .drift-up, .drift-down { animation: none; }
+  .drift-up, .drift-down { animation: none; transform: translateY(-25%); }
 }
