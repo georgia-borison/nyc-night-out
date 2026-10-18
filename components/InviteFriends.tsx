@@ -43,7 +43,7 @@ export function InviteFriends({
     }
   }, [defaultOpen]);
 
-  if (loading || !enabled) return null;
+  if (loading) return null;
 
   // Add whatever's typed (or pasted, several at once) as guests.
   function addDraft(text = draft) {
@@ -145,7 +145,9 @@ export function InviteFriends({
         </p>
       )}
 
-      {!user ? (
+      {!enabled ? (
+        <p className="text-sm text-muted">Google sign-in isn&rsquo;t set up yet, so invites can&rsquo;t be sent. Check back soon.</p>
+      ) : !user ? (
         <div className="flex flex-wrap items-center gap-3">
           <PrimaryButton onClick={startSignIn}>Sign in with Google to send invites</PrimaryButton>
           <p className="text-xs text-muted">We only ask to add events to your calendar.</p>

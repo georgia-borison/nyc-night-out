@@ -4,7 +4,10 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { signInHref, signOut, useAccount } from "./useAccount";
 
-/** Header sign-in: "Sign in" when signed out; the Google avatar with a small menu when signed in. */
+/**
+ * Header sign-in: "Sign in" when signed out (a short note instead of Google
+ * while the keys aren't set up); the Google avatar with a small menu when signed in.
+ */
 export function AccountButton() {
   const { loading, enabled, user } = useAccount();
   const pathname = usePathname();
@@ -24,16 +27,30 @@ export function AccountButton() {
     };
   }, [open]);
 
-  if (loading || !enabled) return null;
+  const signInClass = "whitespace-nowrap rounded-xl px-2 py-2 font-medium text-fg/85 transition hover:text-fg sm:px-3";
 
-  if (!user) {
+  if (loading || !user) {
+    if (loading || enabled) {
+      return (
+        <a href={signInHref(pathname)} className={signInClass}>
+          Sign in
+        </a>
+      );
+    }
     return (
-      <a
-        href={signInHref(pathname)}
-        className="rounded-xl px-3 py-2 font-medium text-fg/85 transition hover:text-fg"
-      >
-        Sign in
-      </a>
+      <div ref={menuRef} className="relative">
+        <button type="button" aria-expanded={open} onClick={() => setOpen((o) => !o)} className={signInClass}>
+          Sign in
+        </button>
+        {open && (
+          <p
+            role="status"
+            className="absolute right-0 top-12 z-30 w-64 rounded-2xl border border-line bg-surface p-3 text-sm text-muted shadow-[0_12px_40px_rgba(0,0,0,0.5)]"
+          >
+            Google sign-in is coming soon. It&rsquo;ll let you send friends a calendar invite for your plan.
+          </p>
+        )}
+      </div>
     );
   }
 

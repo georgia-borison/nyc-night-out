@@ -6,7 +6,11 @@ import { cookieOptions, seal } from "@/lib/session";
 /** Starts "Sign in with Google": remembers a random state and PKCE verifier, then goes to Google. */
 export async function GET(request: Request) {
   const cfg = googleConfig();
-  if (!cfg) return Response.json({ error: NOT_SET_UP }, { status: 503 });
+  // Not set up yet: go back where they came from rather than show an error page.
+  if (!cfg) {
+    console.warn("[auth]", NOT_SET_UP);
+    return NextResponse.redirect(new URL(safeReturn(new URL(request.url).searchParams.get("return")), request.url));
+  }
 
   const state = randomBytes(16).toString("base64url");
   const verifier = randomBytes(32).toString("base64url");
