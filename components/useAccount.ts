@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-export type Account = { email: string; name: string; picture?: string };
+export type Account = { email: string; name: string; picture?: string; calendar: boolean };
 
 /** Who's signed in with Google. `enabled` is false until the app's Google keys are set up. */
 export function useAccount() {

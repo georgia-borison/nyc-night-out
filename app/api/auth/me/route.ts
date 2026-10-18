@@ -6,6 +6,8 @@ export async function GET() {
   const session = await readSession();
   return Response.json({
     enabled: Boolean(googleConfig()),
-    user: session ? { email: session.email, name: session.name, picture: session.picture } : null,
+    user: session
+      ? { email: session.email, name: session.name, picture: session.picture, calendar: session.calendar !== false }
+      : null,
   });
 }

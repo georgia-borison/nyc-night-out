@@ -4,7 +4,6 @@
 export const OAUTH_COOKIE = "no_oauth";
 
 export const GOOGLE_SCOPES = ["openid", "email", "profile", "https://www.googleapis.com/auth/calendar.events"];
-
 export function googleConfig() {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
@@ -23,7 +22,9 @@ export function safeReturn(path: string | null | undefined) {
   return path && path.startsWith("/") && !path.startsWith("//") && !path.startsWith("/\\") ? path : "/";
 }
 
-type TokenResponse = { access_token: string; refresh_token?: string; id_token?: string; error?: string };
+type TokenResponse = { access_token: string; refresh_token?: string; id_token?: string; scope?: string; error?: string };
+
+export const CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events";
 
 async function tokenRequest(body: Record<string, string>): Promise<TokenResponse> {
   const res = await fetch("https://oauth2.googleapis.com/token", {

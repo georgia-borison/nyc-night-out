@@ -12,6 +12,8 @@ export type Session = {
   picture?: string;
   /** Lets the server get a fresh Google access token when sending invites. */
   refreshToken: string;
+  /** Whether the calendar box was ticked on Google's consent screen (it can be left off). */
+  calendar?: boolean;
 };
 
 function key() {

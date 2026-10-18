@@ -17,6 +17,13 @@ export async function POST(request: Request) {
   const session = await readSession();
   if (!session) return Response.json({ error: "Sign in with Google to send invites.", signIn: true }, { status: 401 });
 
+  if (session.calendar === false) {
+    return Response.json(
+      { error: "Calendar access wasn't allowed. Sign in again and tick the calendar box on Google's screen.", signIn: true },
+      { status: 403 },
+    );
+  }
+
   const parsed = InviteSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     return Response.json({ error: "Check the email addresses (up to 20)." }, { status: 400 });

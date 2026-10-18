@@ -148,9 +148,20 @@ export function InviteFriends({
       {!enabled ? (
         <p className="text-sm text-muted">Google sign-in isn&rsquo;t set up yet, so invites can&rsquo;t be sent. Check back soon.</p>
       ) : !user ? (
-        <div className="flex flex-wrap items-center gap-3">
-          <PrimaryButton onClick={startSignIn}>Sign in with Google to send invites</PrimaryButton>
-          <p className="text-xs text-muted">We only ask to add events to your calendar.</p>
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-3">
+            <PrimaryButton onClick={startSignIn}>Sign in with Google to send invites</PrimaryButton>
+            <p className="text-xs text-muted">We only ask to add events to your calendar.</p>
+          </div>
+          <CalendarBoxTip />
+        </div>
+      ) : !user.calendar ? (
+        <div className="space-y-3">
+          <p className="text-sm">
+            You&rsquo;re signed in, but Google wasn&rsquo;t given access to your calendar, so invites can&rsquo;t be sent.
+          </p>
+          <CalendarBoxTip />
+          <PrimaryButton onClick={startSignIn}>Allow calendar access</PrimaryButton>
         </div>
       ) : (
         <div className="space-y-3">
@@ -230,5 +241,15 @@ export function InviteFriends({
         </p>
       )}
     </section>
+  );
+}
+
+/** Google shows calendar access as its own checkbox, which is easy to leave unticked. */
+function CalendarBoxTip() {
+  return (
+    <p className="text-xs text-muted">
+      On Google&rsquo;s screen, tick the box for{" "}
+      <span className="text-fg">&ldquo;View and edit events on all your calendars&rdquo;</span>. Invites can&rsquo;t be sent without it.
+    </p>
   );
 }

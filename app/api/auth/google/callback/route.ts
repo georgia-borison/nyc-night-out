@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { NOT_SET_UP, OAUTH_COOKIE, callbackUrl, exchangeCode, googleConfig, profileFromIdToken, safeReturn } from "@/lib/google";
+import { CALENDAR_SCOPE, NOT_SET_UP, OAUTH_COOKIE, callbackUrl, exchangeCode, googleConfig, profileFromIdToken, safeReturn } from "@/lib/google";
 import { SESSION_COOKIE, cookieOptions, seal, unseal } from "@/lib/session";
 
 const SESSION_MAX_AGE = 60 * 60 * 24 * 180;
@@ -31,6 +31,8 @@ export async function GET(request: NextRequest) {
       name: profile.name ?? profile.email,
       picture: profile.picture,
       refreshToken: tokens.refresh_token,
+      // Google lets people untick calendar access; invites need it.
+      calendar: (tokens.scope ?? "").split(" ").includes(CALENDAR_SCOPE),
     });
     const res = back(false);
     if (sealed) res.cookies.set(SESSION_COOKIE, sealed, cookieOptions(SESSION_MAX_AGE));
