@@ -1,12 +1,14 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { InviteFriends } from "@/components/InviteFriends";
 import { NightPlan } from "@/components/NightPlan";
 import { repairPlan } from "@/lib/repairPlan";
 import { getPlan } from "@/lib/store";
 import { CopyLinkButton } from "./CopyLinkButton";
 
-export default async function PlanPage({ params }: PageProps<"/plan/[id]">) {
+export default async function PlanPage({ params, searchParams }: PageProps<"/plan/[id]">) {
   const { id } = await params;
+  const { invite } = await searchParams;
   const saved = await getPlan(id);
   if (!saved) notFound();
   const plan = await repairPlan(saved);
@@ -20,6 +22,7 @@ export default async function PlanPage({ params }: PageProps<"/plan/[id]">) {
           Plan your own night
         </Link>
       </div>
+      <InviteFriends planId={saved.id} defaultOpen={invite === "1"} />
     </div>
   );
 }

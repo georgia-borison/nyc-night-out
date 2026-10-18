@@ -30,9 +30,7 @@ export function OptionCard({
   const reserve = !option.booked && reserveWhen ? reserveLink(option, reserveWhen) : null;
   return (
     <article
-      className={`flex flex-col rounded-2xl border transition ${
-        selected ? "border-accent bg-accent-soft" : "border-line bg-surface hover:border-muted"
-      }`}
+      className={`glow-card flex flex-col rounded-2xl transition ${selected ? "is-selected" : ""}`}
     >
       {/* The selectable part is a real button; the links below sit outside it. */}
       <button
@@ -45,7 +43,7 @@ export function OptionCard({
       >
         <span className="flex w-full items-start justify-between gap-3">
           <span className="min-w-0">
-            <span className="block font-display text-lg leading-snug">{option.name}</span>
+            <span className="block font-display text-lg font-bold leading-snug break-words">{option.name}</span>
             <span className="block text-xs text-muted">
               <span className="text-accent">{option.category}</span>
               {option.neighborhood && <> · {option.neighborhood}</>}

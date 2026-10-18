@@ -82,10 +82,10 @@ export function NightPlan({ itinerary, trip }: { itinerary: Itinerary; trip: Tri
           <span className="whitespace-nowrap text-muted">{shortDate(trip.date)}</span>
         </p>
         <h1
-          className="plan-rise mt-3 font-display text-4xl italic leading-[1.05] sm:text-6xl"
+          className="plan-rise mt-3 font-display text-4xl font-extrabold leading-[1.05] tracking-[-0.02em] sm:text-6xl"
           style={{ animationDelay: "80ms" }}
         >
-          {itinerary.title.trim() || "Your Night Out"}
+          <span className="text-glow-gradient">{itinerary.title.trim() || "Your Night Out"}</span>
         </h1>
         {itinerary.tagline && (
           <p className="plan-rise mt-2 text-lg text-muted" style={{ animationDelay: "160ms" }}>
@@ -187,7 +187,7 @@ export function NightPlan({ itinerary, trip }: { itinerary: Itinerary; trip: Tri
                         </span>
                       )}
                     </p>
-                    <h3 className="mt-1 font-display text-2xl leading-tight">{stop.name}</h3>
+                    <h3 className="mt-1 font-display text-2xl font-bold leading-tight tracking-[-0.01em] break-words">{stop.name}</h3>
                     <p className="mt-0.5 text-xs text-muted">
                       {stop.category}
                       {stop.address && <> · {stop.address}</>}

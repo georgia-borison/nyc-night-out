@@ -66,7 +66,7 @@ export function LoadingShow({
           <span className="star-twinkle absolute right-3 -bottom-2 text-[9px] text-accent" style={{ animationDelay: "1.4s" }}>✦</span>
         </div>
         <div className="min-w-0 flex-1">
-          <p key={lineKey} className="phrase-fade font-display text-xl italic leading-snug sm:text-2xl">
+          <p key={lineKey} className="phrase-fade font-display text-xl font-semibold leading-snug sm:text-2xl">
             {line}
           </p>
           <p className="mt-2 text-xs text-muted">

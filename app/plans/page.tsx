@@ -18,7 +18,7 @@ export default function PlansPage() {
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <div>
-        <h1 className="font-display text-3xl sm:text-4xl">My plans</h1>
+        <h1 className="font-display text-3xl font-extrabold tracking-[-0.01em] sm:text-4xl">My plans</h1>
         <p className="mt-2 text-sm text-muted">Plans you&rsquo;ve saved on this device.</p>
       </div>
       {plans.length === 0 ? (
@@ -41,7 +41,7 @@ export default function PlansPage() {
                   })}{" "}
                   · {p.area}
                 </p>
-                <h2 className="font-display text-xl italic">{p.title}</h2>
+                <h2 className="font-display text-xl font-bold">{p.title}</h2>
               </Link>
               <button
                 type="button"

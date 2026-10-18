@@ -54,7 +54,7 @@
   --color-dice-text: var(--dice-text);
   --color-dice-muted: var(--dice-muted);
   --font-sans: var(--font-geist-sans);
-  --font-display: var(--font-fraunces);
+  --font-display: var(--font-syne);
   --font-logo: var(--font-boldonse);
 }
 
@@ -262,4 +262,25 @@ input[type="time"]::-webkit-calendar-picker-indicator {
 .landing-still .drift-up, .landing-still .drift-down { animation-play-state: paused; }
 @media (prefers-reduced-motion: reduce) {
   .drift-up, .drift-down { animation: none; transform: translateY(-25%); }
+}
+
+/* ---- Cards: a thin border that lights up in the glow gradient ---- */
+/* Two backgrounds: the opaque card on the padding box, the border color beneath it. */
+.glow-card {
+  border: 1px solid transparent;
+  background:
+    linear-gradient(var(--surface), var(--surface)) padding-box,
+    linear-gradient(var(--line), var(--line)) border-box;
+}
+.glow-card:hover {
+  background:
+    linear-gradient(var(--surface), var(--surface)) padding-box,
+    linear-gradient(120deg, var(--glow-amber), var(--accent) 45%, var(--glow-magenta)) border-box;
+  box-shadow: 0 8px 28px rgba(224, 60, 200, 0.12);
+}
+.glow-card.is-selected {
+  background:
+    linear-gradient(#2a1636, #2a1636) padding-box,
+    linear-gradient(120deg, var(--glow-amber), var(--accent) 45%, var(--glow-magenta)) border-box;
+  box-shadow: 0 0 0 1px rgba(255, 122, 47, 0.35), 0 10px 34px rgba(224, 60, 200, 0.25);
 }

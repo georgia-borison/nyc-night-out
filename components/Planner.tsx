@@ -28,6 +28,7 @@ import { BookingPicker, type VenueResult } from "./BookingPicker";
 import { RollTheDice } from "./RollTheDice";
 import { TimeSelect } from "./TimeSelect";
 import { OFFSET, clockLabel, plannedClock } from "@/lib/timing";
+import { InviteFriends } from "./InviteFriends";
 import { LoadingShow } from "./LoadingShow";
 import { NightPlan } from "./NightPlan";
 
@@ -511,16 +512,18 @@ export function Planner({ openDice = false }: { openDice?: boolean }) {
     }
   }
 
-  async function save() {
-    if (!itinerary) return;
+  async function save(): Promise<string | null> {
+    if (!itinerary) return null;
     setSaving(true);
     setItinError(null);
     try {
       const { id } = await postJSON<{ id: string }>("/api/plans", { trip, itinerary });
       rememberPlan({ id, title: itinerary.title, date, area, savedAt: new Date().toISOString() });
       setSavedId(id);
+      return id;
     } catch (err) {
       setItinError((err as Error).message);
+      return null;
     } finally {
       setSaving(false);
     }
@@ -868,7 +871,7 @@ export function Planner({ openDice = false }: { openDice?: boolean }) {
             return (
               <section key={p.id} className="space-y-3">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <h2 className="font-display text-2xl">
+                  <h2 className="font-display text-2xl font-bold tracking-[-0.01em]">
                     <span className="mr-2">{p.emoji}</span>
                     {p.label}
                   </h2>
@@ -987,6 +990,7 @@ export function Planner({ openDice = false }: { openDice?: boolean }) {
                   <GhostButton onClick={() => setStep(3)}>← Change picks</GhostButton>
                 )}
               </div>
+              <InviteFriends planId={savedId} ensureSaved={async () => savedId ?? (await save())} />
               {spent > 0 && <p className="text-xs text-muted">This plan cost about ${spent.toFixed(2)} in API usage.</p>}
             </>
           )}
@@ -1002,7 +1006,7 @@ function Stepper({ step, onJump }: { step: number; onJump: (i: number) => void }
     <nav aria-label="Progress">
       <ol className="flex gap-2">
         {STEPS.map((s, i) => {
-          const bar = <span aria-hidden className={`block h-1.5 rounded-full ${i <= step ? "bg-accent" : "bg-line"}`} />;
+          const bar = <span aria-hidden className={`block h-1.5 rounded-full ${i <= step ? "bg-glow-gradient" : "bg-line"}`} />;
           const text = `mt-2 block text-sm font-semibold ${i === step ? "text-fg" : i < step ? "text-accent" : "text-muted/60"}`;
           return (
             <li key={s} className="flex-1" aria-current={i === step ? "step" : undefined}>
@@ -1033,8 +1037,9 @@ function Stepper({ step, onJump }: { step: number; onJump: (i: number) => void }
 function Heading({ title, sub }: { title: string; sub: string }) {
   return (
     <div>
-      <h1 className="font-display text-3xl leading-tight sm:text-4xl">{title}</h1>
-      <p className="mt-2 text-muted">{sub}</p>
+      <h1 className="font-display text-3xl font-extrabold leading-tight tracking-[-0.01em] sm:text-4xl">{title}</h1>
+      <span aria-hidden className="bg-glow-gradient mt-3 block h-1 w-16 rounded-full" />
+      <p className="mt-3 text-muted">{sub}</p>
     </div>
   );
 }

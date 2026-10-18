@@ -141,7 +141,7 @@ export function PrimaryButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="rounded-full bg-accent px-6 py-3 font-semibold text-accent-ink transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+      className="bg-glow-gradient rounded-full px-6 py-3 font-semibold text-accent-ink shadow-[0_6px_24px_rgba(224,60,200,0.25)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none"
     >
       {children}
     </button>
